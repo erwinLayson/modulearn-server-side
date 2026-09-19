@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS migrations (
+    id          INT           PRIMARY KEY AUTO_INCREMENT,
+    filename    VARCHAR(255)  NOT NULL UNIQUE,
+    executed_at TIMESTAMP     DEFAULT CURRENT_TIMESTAMP
+);

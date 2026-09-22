@@ -8,19 +8,32 @@ import {NotFoundError, BadRequestError, UnauthorizedError} from "../helper/error
 import {generateToken} from "../helper/jwt.js";
 import {bufferToUUID} from "../helper/bufferToUUID.js";
 import {UUIDToBuffer} from "../helper/UUIDToBuffer.js";
+import {normalizeEmail} from "../helper/normalizeEmail.js";
 
 import type{UserRole} from "../constant/users.js";
 
-export const authService = async (credentials: {email: string; password: string}) => {
+export const authService = async (credentials: {email: string; password: string; school_id?: number}) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
 
     try {
         const userModel = new UserModel(connection);
-        const user = await userModel.getUserByEmail(credentials.email);
+        const normalizedEmail = normalizeEmail(credentials.email);
 
-        if (user === null) {
-            throw new NotFoundError("User not found", 404);
+        let user;
+
+        // Always try school-scoped login first
+        if (credentials.school_id !== undefined && credentials.school_id !== null) {
+            user = await userModel.getUserByEmailAndSchool(normalizedEmail, credentials.school_id);
+        }
+
+        // Fallback: try super-admin global lookup
+        if (!user) {
+            user = await userModel.getSuperAdminByEmail(normalizedEmail);
+        }
+
+        if (!user) {
+            throw new NotFoundError("User not found in selected school", 404);
         }
 
         if (user.status !== "active") {
@@ -52,6 +65,9 @@ export const authService = async (credentials: {email: string; password: string}
                         school_name: schoolData.school_name,
                         school_email: schoolData.school_email,
                         school_level: schoolData.school_level,
+                        academic_system: schoolData.academic_system,
+                        period_count: schoolData.period_count,
+                        academic_config_completed: schoolData.academic_config_completed === 1,
                         address: schoolData.address,
                         region: schoolData.region,
                         province: schoolData.province,

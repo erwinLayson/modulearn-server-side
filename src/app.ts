@@ -28,6 +28,7 @@ import AttendanceRouter from "./routes/attendance.js";
 import SchoolYearRouter from "./routes/school-years.js";
 import UserRouter from "./routes/users.js";
 import GradebookRouter from "./routes/gradebook.js";
+import AcademicPeriodRouter from "./routes/academicPeriods.js";
 
 // ================== Types ====================
 import type{ Express } from "express";
@@ -56,6 +57,7 @@ app.use('/api', AttendanceRouter);
 app.use('/api', SchoolYearRouter);
 app.use('/api', UserRouter);
 app.use('/api', GradebookRouter);
+app.use('/api', AcademicPeriodRouter);
 
 app.use(ErrorHandler)
 

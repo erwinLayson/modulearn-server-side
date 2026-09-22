@@ -6,6 +6,7 @@ import {NotFoundError, BadRequestError, ConflictError, UnauthorizedError} from "
 import {generateToken} from "../helper/jwt.js";
 import type{FacultyProp} from "../constant/faculties.js";
 import { bufferToUUID } from "../helper/bufferToUUID.js";
+import { normalizeEmail } from "../helper/normalizeEmail.js";
 
 export const registerFacultyService = async (faculty: FacultyProp) => {
     const pool = databasePool();
@@ -14,11 +15,19 @@ export const registerFacultyService = async (faculty: FacultyProp) => {
     try {
         await connection.beginTransaction();
 
-        // Insert into users table FIRST (faculties.id FK references users.id)
         const userModel = new UserModel(connection);
+        const normalizedEmail = normalizeEmail(faculty.email);
+
+        // Check for duplicate email within the same school
+        const existing = await userModel.getUserByEmailAndSchool(normalizedEmail, faculty.school_id);
+        if (existing) {
+            throw new BadRequestError("Email already exists in this school");
+        }
+
+        // Insert into users table FIRST (faculties.id FK references users.id)
         await userModel.createUser({
             id: faculty.id,
-            email: faculty.email,
+            email: normalizedEmail,
             password: faculty.password,
             role: "faculty",
             school_id: faculty.school_id,
@@ -27,7 +36,7 @@ export const registerFacultyService = async (faculty: FacultyProp) => {
         });
 
         const facultyModel = new FacultyModel(connection);
-        await facultyModel.registerFaculty(faculty);
+        await facultyModel.registerFaculty({ ...faculty, email: normalizedEmail });
 
         await connection.commit();
         return faculty.id;
@@ -130,7 +139,21 @@ export const updateFacultyService = async (id: string, data: Partial<Pick<Facult
     try {
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
         const facultyModel = new FacultyModel(connection);
-        await facultyModel.updateFaculty(UUIDToBuffer(id), data);
+        const userModel = new UserModel(connection);
+
+        // Normalize email if being updated
+        const updateData = { ...data };
+        if (updateData.email !== undefined) {
+            updateData.email = normalizeEmail(updateData.email);
+        }
+
+        // Update the profile table
+        await facultyModel.updateFaculty(UUIDToBuffer(id), updateData);
+
+        // Sync email to users table if email was changed
+        if (updateData.email !== undefined) {
+            await userModel.updateUser(UUIDToBuffer(id), { email: updateData.email });
+        }
     } finally {
         connection.release();
     }

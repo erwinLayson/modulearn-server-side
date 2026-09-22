@@ -6,6 +6,7 @@ import { bufferToUUID } from "../helper/bufferToUUID.js";
 import { generateRandomUUID } from "../helper/generateRandomId.js";
 import { hashPassword } from "../helper/hashPassword.js";
 import { getEnvName } from "../helper/getEnv.js";
+import { normalizeEmail } from "../helper/normalizeEmail.js";
 
 export const getAllUsersService = async () => {
     const pool = databasePool();
@@ -48,17 +49,30 @@ export const createUserService = async (userData: Omit<UserProp, "id" | "created
     const connection = await pool.getConnection();
 
     try {
-        const existing = await new UserModel(connection).getUserByEmail(userData.email);
-        if (existing) {
-            throw new BadRequestError("Email already exists");
+        const userModel = new UserModel(connection);
+        const normalizedEmail = normalizeEmail(userData.email);
+
+        if (userData.role === "super_admin") {
+            const existing = await userModel.getSuperAdminByEmail(normalizedEmail);
+            if (existing) {
+                throw new BadRequestError("Super admin with this email already exists");
+            }
+        } else {
+            if (userData.school_id == null) {
+                throw new BadRequestError("School ID is required for non-super-admin accounts");
+            }
+            const existing = await userModel.getUserByEmailAndSchool(normalizedEmail, userData.school_id);
+            if (existing) {
+                throw new BadRequestError("Email already exists in this school");
+            }
         }
 
-        const userModel = new UserModel(connection);
         const id = generateRandomUUID();
         const password = await hashPassword(userData.password);
 
         await userModel.createUser({
             ...userData,
+            email: normalizedEmail,
             id,
             password,
         });

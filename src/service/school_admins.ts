@@ -58,6 +58,7 @@ export const schoolAdminLoginService = async (credentials: LoginCredentialsProp)
             ...schooldata,
             id: bufferToUUID(schooldata.id),
             admin_id: bufferToUUID(schooldata.admin_id),
+            academic_config_completed: schooldata.academic_config_completed === 1,
             token,
         };
     }finally {

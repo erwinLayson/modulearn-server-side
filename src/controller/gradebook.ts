@@ -22,8 +22,9 @@ export const getGradingWeights = async (
     next: NextFunction
 ) => {
     const { classId, subjectId } = req.params;
+    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     try {
-        const result = await getGradingWeightsService(classId, subjectId);
+        const result = await getGradingWeightsService(classId, subjectId, periodId);
         sendSuccess(res, "Grading weights retrieved", result);
     } catch (err) {
         next(err);
@@ -37,9 +38,10 @@ export const updateGradingWeights = async (
 ) => {
     const { classId, subjectId } = req.params;
     const { weights } = req.body;
+    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     const facultyId = req.user!.id;
     try {
-        const result = await updateGradingWeightsService(classId, subjectId, facultyId, weights);
+        const result = await updateGradingWeightsService(classId, subjectId, facultyId, weights, periodId);
         sendSuccess(res, result.message, result);
     } catch (err) {
         next(err);
@@ -55,8 +57,9 @@ export const getGradeItems = async (
 ) => {
     const { classId, subjectId } = req.params;
     const category = typeof req.query.category === "string" ? req.query.category : undefined;
+    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     try {
-        const result = await getGradeItemsService(classId, subjectId, category);
+        const result = await getGradeItemsService(classId, subjectId, category, periodId);
         sendSuccess(res, "Grade items retrieved", result);
     } catch (err) {
         next(err);
@@ -70,9 +73,10 @@ export const createGradeItem = async (
 ) => {
     const { classId, subjectId } = req.params;
     const { category, title, max_score, due_date } = req.body;
+    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     const facultyId = req.user!.id;
     try {
-        const result = await createGradeItemService(classId, subjectId, facultyId, category, title, max_score, due_date ?? null);
+        const result = await createGradeItemService(classId, subjectId, facultyId, category, title, max_score, due_date ?? null, periodId);
         sendSuccess(res, result.message, result, 201);
     } catch (err) {
         next(err);
@@ -119,8 +123,9 @@ export const getGradesForSubject = async (
 ) => {
     const { classId, subjectId } = req.params;
     const facultyId = req.user!.id;
+    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     try {
-        const result = await getGradesForSubjectService(classId, subjectId, facultyId);
+        const result = await getGradesForSubjectService(classId, subjectId, facultyId, periodId);
         sendSuccess(res, "Grades retrieved", result);
     } catch (err) {
         next(err);
@@ -153,8 +158,9 @@ export const getStudentGradesForSubject = async (
     const { classId, subjectId } = req.params;
     const studentId = req.user!.id;
     const schoolId = req.user!.school_id!;
+    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     try {
-        const result = await getStudentGradesForSubjectService(studentId, classId, subjectId, schoolId);
+        const result = await getStudentGradesForSubjectService(studentId, classId, subjectId, schoolId, periodId);
         sendSuccess(res, "Student grades retrieved", result);
     } catch (err) {
         next(err);
@@ -168,8 +174,9 @@ export const getStudentSummary = async (
 ) => {
     const studentId = req.user!.id;
     const schoolId = req.user!.school_id!;
+    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     try {
-        const result = await getStudentSummaryService(studentId, schoolId);
+        const result = await getStudentSummaryService(studentId, schoolId, periodId);
         sendSuccess(res, "Student grade summary retrieved", result);
     } catch (err) {
         next(err);

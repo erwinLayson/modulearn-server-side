@@ -31,6 +31,28 @@ export default class User {
         }
     }
 
+    async getUserByEmailAndSchool(email: string, schoolId: number):Promise<UserProp | null> {
+        try {
+            const query = `SELECT * FROM users WHERE email = ? AND school_id = ? LIMIT 1`;
+            const [row] = await this.connection.execute<RowDataPacket[]>(query, [email, schoolId]);
+            if(row.length === 0) return null;
+            return row[0] as UserProp;
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
+    async getSuperAdminByEmail(email: string):Promise<UserProp | null> {
+        try {
+            const query = `SELECT * FROM users WHERE email = ? AND role = 'super_admin' AND school_id IS NULL LIMIT 1`;
+            const [row] = await this.connection.execute<RowDataPacket[]>(query, [email]);
+            if(row.length === 0) return null;
+            return row[0] as UserProp;
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
     async getAllUsers():Promise<UserProp[]> {
         try {
             const query = `SELECT id, email, role, school_id, status, name, created_at FROM users`;

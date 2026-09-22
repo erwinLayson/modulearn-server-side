@@ -12,16 +12,18 @@ const COOKIE_OPTIONS = {
 };
 
 export const loginController = async (
-    req: Request<{}, {}, {email: string; password: string}>,
+    req: Request<{}, {}, {email: string; password: string; school_id?: number}>,
     res: Response,
     next: NextFunction
 ) => {
-    const {email, password} = req.body;
+    const {email, password, school_id} = req.body;
 
     CheckData({email, password});
 
     try {
-        const result = await authService({email, password});
+        const credentials: { email: string; password: string; school_id?: number } = { email, password };
+        if (school_id !== undefined) credentials.school_id = school_id;
+        const result = await authService(credentials);
         const {token, ...userData} = result;
 
         res.cookie("token", token, COOKIE_OPTIONS);

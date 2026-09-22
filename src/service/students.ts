@@ -8,6 +8,7 @@ import type{StudentProp, StudentImportRow} from "../constant/students.js";
 import { bufferToUUID } from "../helper/bufferToUUID.js";
 import { generateRandomUUID } from "../helper/generateRandomId.js";
 import { hashPassword } from "../helper/hashPassword.js";
+import { normalizeEmail } from "../helper/normalizeEmail.js";
 import { getEnvName } from "../helper/getEnv.js";
 import { parse } from "csv-parse/sync";
 import * as XLSX from "xlsx";
@@ -127,11 +128,19 @@ export const registerStudentService = async (student: StudentProp) => {
     try {
         await connection.beginTransaction();
 
-        // Insert into users table FIRST (students.id FK references users.id)
         const userModel = new UserModel(connection);
+        const normalizedEmail = normalizeEmail(student.email);
+
+        // Check for duplicate email within the same school
+        const existing = await userModel.getUserByEmailAndSchool(normalizedEmail, student.school_id);
+        if (existing) {
+            throw new BadRequestError("Email already exists in this school");
+        }
+
+        // Insert into users table FIRST (students.id FK references users.id)
         await userModel.createUser({
             id: student.id,
-            email: student.email,
+            email: normalizedEmail,
             password: student.password,
             role: "student",
             school_id: student.school_id,
@@ -140,7 +149,7 @@ export const registerStudentService = async (student: StudentProp) => {
         });
 
         const studentModel = new StudentModel(connection);
-        await studentModel.registerStudent(student);
+        await studentModel.registerStudent({ ...student, email: normalizedEmail });
 
         await connection.commit();
         return student.id;
@@ -243,7 +252,21 @@ export const updateStudentService = async (id: string, data: Partial<Pick<Studen
     try {
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
         const studentModel = new StudentModel(connection);
-        await studentModel.updateStudent(UUIDToBuffer(id), data);
+        const userModel = new UserModel(connection);
+
+        // Normalize email if being updated
+        const updateData = { ...data };
+        if (updateData.email !== undefined) {
+            updateData.email = normalizeEmail(updateData.email);
+        }
+
+        // Update the profile table
+        await studentModel.updateStudent(UUIDToBuffer(id), updateData);
+
+        // Sync email to users table if email was changed
+        if (updateData.email !== undefined) {
+            await userModel.updateUser(UUIDToBuffer(id), { email: updateData.email });
+        }
     } finally {
         connection.release();
     }
@@ -525,10 +548,11 @@ export const importStudentsService = async (
             for (const { student, rowNum } of students) {
                 let userCreated = false;
                 try {
+                    const normalizedEmail = normalizeEmail(student.email);
                     // students.id has a FK to users.id — create the user account FIRST
                     await userModel.createUser({
                         id: student.id,
-                        email: student.email,
+                        email: normalizedEmail,
                         password: student.password,
                         role: "student",
                         school_id: schoolId,
@@ -536,7 +560,7 @@ export const importStudentsService = async (
                         name: `${student.first_name} ${student.last_name}`,
                     });
                     userCreated = true;
-                    await studentModel.registerStudent(student);
+                    await studentModel.registerStudent({ ...student, email: normalizedEmail });
                     success++;
                 } catch (err: any) {
                     // If user was created but student insert failed, clean up orphaned user
@@ -552,7 +576,7 @@ export const importStudentsService = async (
                         originalError = originalError?.cause ?? originalError?.original;
                     }
                     const error = originalError?.code === "ER_DUP_ENTRY"
-                        ? `Duplicate email: ${student.email}`
+                        ? `Email already exists in this school: ${student.email}`
                         : originalError?.sqlMessage || err?.cause?.sqlMessage || err?.message || "Unknown error";
                     console.error(`[students:import] row ${rowNum} (${student.email}) failed:`, error);
                     insertErrors.push({ row: rowNum, email: student.email, error });

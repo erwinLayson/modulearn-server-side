@@ -32,6 +32,10 @@ function mapMysqlError(err: unknown): AppError | null {
             const messages: Record<string, string> = {
                 uq_class_faculty: "This teacher is already assigned to this class.",
                 unique_class_adviser: "This teacher is already an adviser of another class. A teacher can only be the adviser of one class.",
+                uq_users_email_school: "An account with this email already exists in this school.",
+                uq_faculties_email_school: "A faculty member with this email already exists in this school.",
+                uq_students_email_school: "A student with this email already exists in this school.",
+                uq_school_admins_email_school: "An admin account with this email already exists in this school.",
             };
             return new ConflictError(
                 (key && messages[key]) ?? "This record already exists. Please check for duplicates before trying again."

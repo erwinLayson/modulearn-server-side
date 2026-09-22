@@ -10,6 +10,7 @@ export interface GradingWeightProp {
     subject_id: Buffer;
     category: GradingCategory;
     weight: number;
+    period_id: number | null;
 }
 
 export interface GradeItemProp {
@@ -21,6 +22,7 @@ export interface GradeItemProp {
     title: string;
     max_score: number;
     due_date: string | null;
+    period_id: number | null;
 }
 
 export interface GradeProp {

@@ -9,6 +9,7 @@ export interface GradingWeightRow {
     subject_id: Buffer;
     category: GradingCategory;
     weight: number;
+    period_id: number | null;
 }
 
 export interface GradeItemRow {
@@ -20,6 +21,7 @@ export interface GradeItemRow {
     title: string;
     max_score: number;
     due_date: string | null;
+    period_id: number | null;
     created_at: Date;
 }
 
@@ -92,25 +94,30 @@ export default class Gradebook {
 
     // --- Grading Weights ---
 
-    async getGradingWeights(classId: Buffer, subjectId: Buffer): Promise<GradingWeightRow[]> {
+    async getGradingWeights(classId: Buffer, subjectId: Buffer, periodId?: number): Promise<GradingWeightRow[]> {
         try {
-            const query = `SELECT id, class_id, subject_id, category, weight FROM grading_weights WHERE class_id = ? AND subject_id = ?`;
-            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId, subjectId]);
+            let query = `SELECT id, class_id, subject_id, category, weight, period_id FROM grading_weights WHERE class_id = ? AND subject_id = ?`;
+            const params: (Buffer | number)[] = [classId, subjectId];
+            if (periodId !== undefined) {
+                query += ` AND period_id = ?`;
+                params.push(periodId);
+            }
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, params);
             return rows as GradingWeightRow[];
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
 
-    async upsertGradingWeights(classId: Buffer, subjectId: Buffer, weights: { category: GradingCategory; weight: number }[]): Promise<void> {
+    async upsertGradingWeights(classId: Buffer, subjectId: Buffer, weights: { category: GradingCategory; weight: number }[], periodId?: number): Promise<void> {
         try {
             for (const w of weights) {
                 const query = `
-                    INSERT INTO grading_weights (class_id, subject_id, category, weight)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO grading_weights (class_id, subject_id, category, weight, period_id)
+                    VALUES (?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE weight = VALUES(weight)
                 `;
-                await this.connection.execute<ResultSetHeader>(query, [classId, subjectId, w.category, w.weight]);
+                await this.connection.execute<ResultSetHeader>(query, [classId, subjectId, w.category, w.weight, periodId ?? null]);
             }
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
@@ -119,13 +126,17 @@ export default class Gradebook {
 
     // --- Grade Items ---
 
-    async getGradeItems(classId: Buffer, subjectId: Buffer, category?: GradeItemCategory): Promise<GradeItemRow[]> {
+    async getGradeItems(classId: Buffer, subjectId: Buffer, category?: GradeItemCategory, periodId?: number): Promise<GradeItemRow[]> {
         try {
-            let query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, created_at FROM grade_items WHERE class_id = ? AND subject_id = ?`;
-            const params: (Buffer | GradeItemCategory)[] = [classId, subjectId];
+            let query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id, created_at FROM grade_items WHERE class_id = ? AND subject_id = ?`;
+            const params: (Buffer | GradeItemCategory | number)[] = [classId, subjectId];
             if (category) {
                 query += ` AND category = ?`;
                 params.push(category);
+            }
+            if (periodId !== undefined) {
+                query += ` AND period_id = ?`;
+                params.push(periodId);
             }
             query += ` ORDER BY created_at DESC`;
             const [rows] = await this.connection.execute<RowDataPacket[]>(query, params);
@@ -145,11 +156,11 @@ export default class Gradebook {
         }
     }
 
-    async createGradeItem(classId: Buffer, subjectId: Buffer, facultyId: Buffer, category: GradeItemCategory, title: string, maxScore: number, dueDate: string | null): Promise<Buffer> {
+    async createGradeItem(classId: Buffer, subjectId: Buffer, facultyId: Buffer, category: GradeItemCategory, title: string, maxScore: number, dueDate: string | null, periodId?: number): Promise<Buffer> {
         try {
             const idBuf = generateRandomUUID();
-            const query = `INSERT INTO grade_items (id, class_id, subject_id, faculty_id, category, title, max_score, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-            await this.connection.execute<ResultSetHeader>(query, [idBuf, classId, subjectId, facultyId, category, title, maxScore, dueDate || null]);
+            const query = `INSERT INTO grade_items (id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            await this.connection.execute<ResultSetHeader>(query, [idBuf, classId, subjectId, facultyId, category, title, maxScore, dueDate || null, periodId ?? null]);
             return idBuf;
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
@@ -247,16 +258,23 @@ export default class Gradebook {
         }
     }
 
-    async getAttendanceRate(studentId: Buffer, classId: Buffer, subjectId: Buffer): Promise<number> {
+    async getAttendanceRate(studentId: Buffer, classId: Buffer, subjectId: Buffer, periodId?: number): Promise<number> {
         try {
-            const query = `
+            let query = `
                 SELECT
                     COUNT(*) as total_sessions,
                     SUM(CASE WHEN status = 'present' THEN 1 ELSE 0 END) as present_count
                 FROM attendance_records
                 WHERE student_id = ? AND class_id = ? AND subject_id = ?
             `;
-            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [studentId, classId, subjectId]);
+            const params: (Buffer | number)[] = [studentId, classId, subjectId];
+
+            if (periodId !== undefined) {
+                query += ` AND attendance_date BETWEEN (SELECT start_date FROM academic_periods WHERE id = ?) AND (SELECT end_date FROM academic_periods WHERE id = ?)`;
+                params.push(periodId, periodId);
+            }
+
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, params);
             const row = rows[0];
             if (!row || row.total_sessions === 0) return 0;
             return Math.round((row.present_count / row.total_sessions) * 100);
@@ -265,26 +283,45 @@ export default class Gradebook {
         }
     }
 
-    async hasAttendanceRecords(studentId: Buffer, classId: Buffer, subjectId: Buffer): Promise<boolean> {
+    async hasAttendanceRecords(studentId: Buffer, classId: Buffer, subjectId: Buffer, periodId?: number): Promise<boolean> {
         try {
-            const query = `SELECT COUNT(*) as cnt FROM attendance_records WHERE student_id = ? AND class_id = ? AND subject_id = ?`;
-            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [studentId, classId, subjectId]);
+            let query = `SELECT COUNT(*) as cnt FROM attendance_records WHERE student_id = ? AND class_id = ? AND subject_id = ?`;
+            const params: (Buffer | number)[] = [studentId, classId, subjectId];
+
+            if (periodId !== undefined) {
+                query += ` AND attendance_date BETWEEN (SELECT start_date FROM academic_periods WHERE id = ?) AND (SELECT end_date FROM academic_periods WHERE id = ?)`;
+                params.push(periodId, periodId);
+            }
+
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, params);
             return (rows[0]?.cnt ?? 0) > 0;
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
 
-    async getStudentGradesForSubject(studentId: Buffer, classId: Buffer, subjectId: Buffer): Promise<{
+    async getStudentGradesForSubject(studentId: Buffer, classId: Buffer, subjectId: Buffer, periodId?: number): Promise<{
         items: { id: Buffer; category: GradeItemCategory; title: string; max_score: number; due_date: string | null }[];
         scores: { grade_item_id: Buffer; score: number }[];
     }> {
         try {
-            const itemsQuery = `SELECT id, category, title, max_score, due_date FROM grade_items WHERE class_id = ? AND subject_id = ? ORDER BY category, created_at`;
-            const [items] = await this.connection.execute<RowDataPacket[]>(itemsQuery, [classId, subjectId]);
+            let itemsQuery = `SELECT id, category, title, max_score, due_date FROM grade_items WHERE class_id = ? AND subject_id = ?`;
+            const itemsParams: (Buffer | number)[] = [classId, subjectId];
+            if (periodId !== undefined) {
+                itemsQuery += ` AND period_id = ?`;
+                itemsParams.push(periodId);
+            }
+            itemsQuery += ` ORDER BY category, created_at`;
+            const [items] = await this.connection.execute<RowDataPacket[]>(itemsQuery, itemsParams);
 
-            const scoresQuery = `SELECT grade_item_id, score FROM grades WHERE student_id = ? AND grade_item_id IN (SELECT id FROM grade_items WHERE class_id = ? AND subject_id = ?)`;
-            const [scores] = await this.connection.execute<RowDataPacket[]>(scoresQuery, [studentId, classId, subjectId]);
+            let scoresQuery = `SELECT grade_item_id, score FROM grades WHERE student_id = ? AND grade_item_id IN (SELECT id FROM grade_items WHERE class_id = ? AND subject_id = ?`;
+            const scoresParams: (Buffer | number)[] = [studentId, classId, subjectId];
+            if (periodId !== undefined) {
+                scoresQuery += ` AND period_id = ?`;
+                scoresParams.push(periodId);
+            }
+            scoresQuery += `)`;
+            const [scores] = await this.connection.execute<RowDataPacket[]>(scoresQuery, scoresParams);
 
             return {
                 items: items as { id: Buffer; category: GradeItemCategory; title: string; max_score: number; due_date: string | null }[],

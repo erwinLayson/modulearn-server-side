@@ -4,6 +4,9 @@ export interface SchoolsProp {
     school_id: number;
     school_email: string;
     school_level: number;
+    academic_system: string;
+    period_count: number;
+    academic_config_completed: number;
     address: string;
     region: string;
     province: string;

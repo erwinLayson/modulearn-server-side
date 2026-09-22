@@ -8,7 +8,7 @@ import { computeNormalizedFinalGrade } from "../helper/gradeCalculation.js";
 
 // --- Grading Weights ---
 
-export const getGradingWeightsService = async (classId: string, subjectId: string) => {
+export const getGradingWeightsService = async (classId: string, subjectId: string, periodId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -16,11 +16,12 @@ export const getGradingWeightsService = async (classId: string, subjectId: strin
         const model = new GradebookModel(connection);
         const classBuf = UUIDToBuffer(classId);
         const subjectBuf = UUIDToBuffer(subjectId);
-        const weights = await model.getGradingWeights(classBuf, subjectBuf);
+        const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
         return weights.map(w => ({
             id: w.id,
             category: w.category,
             weight: Number(w.weight),
+            period_id: w.period_id,
         }));
     } finally {
         connection.release();
@@ -31,7 +32,8 @@ export const updateGradingWeightsService = async (
     classId: string,
     subjectId: string,
     facultyId: string,
-    weights: { category: string; weight: number }[]
+    weights: { category: string; weight: number }[],
+    periodId?: number
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -72,7 +74,7 @@ export const updateGradingWeightsService = async (
             throw new BadRequestError(`Grading weights must total exactly 100%. Current total: ${totalWeight}%`);
         }
 
-        await model.upsertGradingWeights(classBuf, subjectBuf, processedWeights);
+        await model.upsertGradingWeights(classBuf, subjectBuf, processedWeights, periodId);
         return { message: "Grading weights updated successfully" };
     } finally {
         connection.release();
@@ -81,7 +83,7 @@ export const updateGradingWeightsService = async (
 
 // --- Grade Items ---
 
-export const getGradeItemsService = async (classId: string, subjectId: string, category?: string) => {
+export const getGradeItemsService = async (classId: string, subjectId: string, category?: string, periodId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -89,7 +91,7 @@ export const getGradeItemsService = async (classId: string, subjectId: string, c
         const model = new GradebookModel(connection);
         const classBuf = UUIDToBuffer(classId);
         const subjectBuf = UUIDToBuffer(subjectId);
-        const items = await model.getGradeItems(classBuf, subjectBuf, category as GradeItemCategory | undefined);
+        const items = await model.getGradeItems(classBuf, subjectBuf, category as GradeItemCategory | undefined, periodId);
         return items.map(i => ({
             id: bufferToUUID(i.id),
             class_id: bufferToUUID(i.class_id),
@@ -99,7 +101,7 @@ export const getGradeItemsService = async (classId: string, subjectId: string, c
             title: i.title,
             max_score: Number(i.max_score),
             due_date: i.due_date,
-            created_at: i.created_at,
+            period_id: i.period_id,
         }));
     } finally {
         connection.release();
@@ -113,7 +115,8 @@ export const createGradeItemService = async (
     category: string,
     title: string,
     maxScore: number,
-    dueDate: string | null
+    dueDate: string | null,
+    periodId?: number
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -154,7 +157,7 @@ export const createGradeItemService = async (
             throw new BadRequestError("due_date must be in YYYY-MM-DD format");
         }
 
-        const id = await model.createGradeItem(classBuf, subjectBuf, facultyBuf, category as GradeItemCategory, title.trim(), maxScore, dueDate);
+        const id = await model.createGradeItem(classBuf, subjectBuf, facultyBuf, category as GradeItemCategory, title.trim(), maxScore, dueDate, periodId);
         return { id: bufferToUUID(id), message: "Grade item created successfully" };
     } finally {
         connection.release();
@@ -229,7 +232,7 @@ export const deleteGradeItemService = async (itemId: string, facultyId: string) 
 
 // --- Grades ---
 
-export const getGradesForSubjectService = async (classId: string, subjectId: string, facultyId: string) => {
+export const getGradesForSubjectService = async (classId: string, subjectId: string, facultyId: string, periodId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -244,7 +247,7 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
             throw new ForbiddenError("You are not assigned to teach this subject in this class");
         }
 
-        const items = await model.getGradeItems(classBuf, subjectBuf);
+        const items = await model.getGradeItems(classBuf, subjectBuf, undefined, periodId);
         const { getCurrentSchoolYearService } = await import("./school-years.js");
         const classModel = new (await import("../model/classes.js")).default(connection);
         const classInfo = await classModel.getClassById(classBuf);
@@ -257,7 +260,7 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
         }
 
         const students = await model.getEnrolledStudents(classBuf, currentSy.id);
-        const weights = await model.getGradingWeights(classBuf, subjectBuf);
+        const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
 
         // Build grade map: grade_item_id -> student_id -> score
         const gradeMap = new Map<string, Map<string, number>>();
@@ -273,8 +276,8 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
         // Compute attendance rates and record existence
         const attendanceData = new Map<string, { rate: number; hasRecords: boolean }>();
         for (const s of students) {
-            const rate = await model.getAttendanceRate(s.student_id, classBuf, subjectBuf);
-            const hasRecords = await model.hasAttendanceRecords(s.student_id, classBuf, subjectBuf);
+            const rate = await model.getAttendanceRate(s.student_id, classBuf, subjectBuf, periodId);
+            const hasRecords = await model.hasAttendanceRecords(s.student_id, classBuf, subjectBuf, periodId);
             attendanceData.set(bufferToUUID(s.student_id), { rate, hasRecords });
         }
 
@@ -433,7 +436,8 @@ export const getStudentGradesForSubjectService = async (
     studentId: string,
     classId: string,
     subjectId: string,
-    schoolId: number
+    schoolId: number,
+    periodId?: number
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -455,20 +459,20 @@ export const getStudentGradesForSubjectService = async (
             throw new ForbiddenError("You are not enrolled in this class");
         }
 
-        const { items, scores } = await model.getStudentGradesForSubject(studentBuf, classBuf, subjectBuf);
+        const { items, scores } = await model.getStudentGradesForSubject(studentBuf, classBuf, subjectBuf, periodId);
         const scoreMap = new Map<string, number>();
         for (const s of scores) {
             scoreMap.set(bufferToUUID(s.grade_item_id), Number(s.score));
         }
 
-        const weights = await model.getGradingWeights(classBuf, subjectBuf);
+        const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
         const weightMap = new Map<string, number>();
         for (const w of weights) {
             weightMap.set(w.category, Number(w.weight));
         }
 
-        const attendanceRate = await model.getAttendanceRate(studentBuf, classBuf, subjectBuf);
-        const hasAttendance = await model.hasAttendanceRecords(studentBuf, classBuf, subjectBuf);
+        const attendanceRate = await model.getAttendanceRate(studentBuf, classBuf, subjectBuf, periodId);
+        const hasAttendance = await model.hasAttendanceRecords(studentBuf, classBuf, subjectBuf, periodId);
 
         // Group items by category and compute averages
         const categories = ["activities", "quizzes", "exams"] as const;
@@ -541,7 +545,7 @@ export const getStudentGradesForSubjectService = async (
 
 import type { RowDataPacket } from "mysql2/promise";
 
-export const getStudentSummaryService = async (studentId: string, schoolId: number) => {
+export const getStudentSummaryService = async (studentId: string, schoolId: number, periodId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -589,21 +593,21 @@ export const getStudentSummaryService = async (studentId: string, schoolId: numb
             const classBuf = UUIDToBuffer(subj.class_id);
             const subjectBuf = UUIDToBuffer(subj.subject_id);
 
-            const items = await model.getGradeItems(classBuf, subjectBuf);
-            const { items: studentItems, scores } = await model.getStudentGradesForSubject(studentBuf, classBuf, subjectBuf);
+            const items = await model.getGradeItems(classBuf, subjectBuf, undefined, periodId);
+            const { items: studentItems, scores } = await model.getStudentGradesForSubject(studentBuf, classBuf, subjectBuf, periodId);
             const scoreMap = new Map<string, number>();
             for (const s of scores) {
                 scoreMap.set(bufferToUUID(s.grade_item_id), Number(s.score));
             }
 
-            const weights = await model.getGradingWeights(classBuf, subjectBuf);
+            const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
             const weightMap = new Map<string, number>();
             for (const w of weights) {
                 weightMap.set(w.category, Number(w.weight));
             }
 
-            const attendanceRate = await model.getAttendanceRate(studentBuf, classBuf, subjectBuf);
-            const hasAttendance = await model.hasAttendanceRecords(studentBuf, classBuf, subjectBuf);
+            const attendanceRate = await model.getAttendanceRate(studentBuf, classBuf, subjectBuf, periodId);
+            const hasAttendance = await model.hasAttendanceRecords(studentBuf, classBuf, subjectBuf, periodId);
             const teacherName = await model.getSubjectTeacher(classBuf, subjectBuf);
 
             // Compute averages

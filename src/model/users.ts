@@ -95,6 +95,24 @@ export default class User {
         }
     }
 
+    async updateCredentials(id: Buffer, data: { email?: string; password?: string }):Promise<void> {
+        const fields: string[] = [];
+        const values: (string | Buffer)[] = [];
+
+        if(data.email !== undefined) { fields.push("email = ?"); values.push(data.email); }
+        if(data.password !== undefined) { fields.push("password = ?"); values.push(data.password); }
+
+        if(fields.length === 0) { return; }
+        values.push(id);
+
+        try {
+            const query = `UPDATE users SET ${fields.join(", ")} WHERE id = ?`;
+            await this.connection.execute<ResultSetHeader>(query, values);
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
     async deleteUser(id: Buffer):Promise<void> {
         try {
             const query = `DELETE FROM users WHERE id = ?`;

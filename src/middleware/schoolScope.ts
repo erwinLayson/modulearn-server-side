@@ -101,9 +101,12 @@ export const verifyOwnership = (
 
         try {
             const pool = databasePool();
+            const isUuid = /^[0-9a-f]{32}$/i.test(id.replace(/-/g, ""));
+            const paramValue = isUuid ? Buffer.from(id.replace(/-/g, ""), "hex") : id;
+            const idColumn = isUuid ? "id" : "school_id";
             const [rows] = await pool.execute(
-                `SELECT ${schoolIdColumn} FROM ${table} WHERE id = ? LIMIT 1`,
-                [Buffer.from(id.replace(/-/g, ""), "hex")]
+                `SELECT ${schoolIdColumn} FROM ${table} WHERE ${idColumn} = ? LIMIT 1`,
+                [paramValue]
             );
 
             const result = rows as {[key: string]: unknown}[];

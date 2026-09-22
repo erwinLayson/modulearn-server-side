@@ -96,6 +96,52 @@ export const updateUserService = async (id: string, data: Partial<Pick<UserProp,
     }
 };
 
+export const updateCredentialsService = async (
+    id: string,
+    currentPassword: string,
+    data: { email?: string; password?: string }
+) => {
+    const pool = databasePool();
+    const connection = await pool.getConnection();
+
+    try {
+        const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
+        const bcrypt = await import("bcrypt");
+        const userModel = new UserModel(connection);
+
+        const user = await userModel.getUserById(UUIDToBuffer(id));
+        if (!user) {
+            throw new NotFoundError("User not found", 404);
+        }
+
+        const valid = await bcrypt.compare(currentPassword, user.password);
+        if (!valid) {
+            throw new BadRequestError("Current password is incorrect");
+        }
+
+        const updates: { email?: string; password?: string } = {};
+        if (data.email !== undefined) {
+            const normalizedEmail = normalizeEmail(data.email);
+            if (normalizedEmail !== user.email) {
+                const existing = await userModel.getUserByEmail(normalizedEmail);
+                if (existing) {
+                    throw new BadRequestError("Email already in use");
+                }
+                updates.email = normalizedEmail;
+            }
+        }
+        if (data.password !== undefined) {
+            updates.password = await hashPassword(data.password);
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await userModel.updateCredentials(UUIDToBuffer(id), updates);
+        }
+    } finally {
+        connection.release();
+    }
+};
+
 export const deleteUserService = async (id: string) => {
     const pool = databasePool();
     const connection = await pool.getConnection();

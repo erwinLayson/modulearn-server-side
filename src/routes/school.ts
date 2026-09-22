@@ -13,7 +13,7 @@ router.post('/schools', registerNewSchool);
 router.get('/schools', authMiddleware, roleMiddleware("super_admin"), getAllSchools);
 
 // School config endpoints
-router.get('/schools/:id/config', authMiddleware, roleMiddleware("school_admin"), verifyOwnership('schools'), getSchoolConfig);
-router.put('/schools/:id/config', authMiddleware, roleMiddleware("school_admin"), verifyOwnership('schools'), updateSchoolConfig);
+router.get('/schools/:id/config', authMiddleware, roleMiddleware("school_admin"), verifyOwnership('schools', 'school_id'), getSchoolConfig);
+router.put('/schools/:id/config', authMiddleware, roleMiddleware("school_admin"), verifyOwnership('schools', 'school_id'), updateSchoolConfig);
 
 export default router;

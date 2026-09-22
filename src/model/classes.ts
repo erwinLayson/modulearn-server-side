@@ -6,10 +6,10 @@ export default class Class {
     constructor(private connection: PoolConnection){}
 
     async registerClass(cls: ClassProp):Promise<void> {
-        const {id, class_name, school_id, faculty_id, capacity, section, grade_level, schedule} = cls;
+        const {id, class_name, school_id, school_year_id, faculty_id, capacity, section, grade_level, schedule} = cls;
         try {
-            const query = `INSERT INTO classes(id, class_name, school_id, faculty_id, capacity, section, grade_level, schedule) VALUES(?,?,?,?,?,?,?,?)`;
-            const values = [id, class_name, school_id, faculty_id, capacity, section, grade_level, schedule ? JSON.stringify(schedule) : null];
+            const query = `INSERT INTO classes(id, class_name, school_id, school_year_id, faculty_id, capacity, section, grade_level, schedule) VALUES(?,?,?,?,?,?,?,?,?)`;
+            const values = [id, class_name, school_id, school_year_id, faculty_id, capacity, section, grade_level, schedule ? JSON.stringify(schedule) : null];
             await this.connection.execute<ResultSetHeader>(query, values);
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
@@ -18,7 +18,7 @@ export default class Class {
 
     async getClassesBySchoolId(school_id: number):Promise<ClassProp[]> {
         try {
-            const query = `SELECT id, class_name, school_id, faculty_id, capacity, section, grade_level, schedule FROM classes WHERE school_id = ?`;
+            const query = `SELECT id, class_name, school_id, school_year_id, faculty_id, capacity, section, grade_level, schedule FROM classes WHERE school_id = ?`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as ClassProp[];
         } catch(err) {
@@ -30,7 +30,7 @@ export default class Class {
         try {
             const query = `
                 SELECT 
-                    c.id, c.class_name, c.school_id, c.faculty_id, 
+                    c.id, c.class_name, c.school_id, c.school_year_id, c.faculty_id, 
                     c.capacity, c.section, c.grade_level, c.schedule, c.created_at,
                     CONCAT(f.first_name, ' ', f.last_name) as faculty_name
                 FROM classes c
@@ -44,9 +44,27 @@ export default class Class {
         }
     }
 
+    async getClassesBySchoolIdAndYear(school_id: number, schoolYearId: number):Promise<ClassWithDetails[]> {
+        try {
+            const query = `
+                SELECT 
+                    c.id, c.class_name, c.school_id, c.school_year_id, c.faculty_id, 
+                    c.capacity, c.section, c.grade_level, c.schedule, c.created_at,
+                    CONCAT(f.first_name, ' ', f.last_name) as faculty_name
+                FROM classes c
+                LEFT JOIN faculties f ON c.faculty_id = f.id
+                WHERE c.school_id = ? AND c.school_year_id = ?
+            `;
+            const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id, schoolYearId]);
+            return row as ClassWithDetails[];
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
     async getClassesByFacultyId(faculty_id: Buffer):Promise<ClassProp[]> {
         try {
-            const query = `SELECT id, class_name, school_id, faculty_id, capacity, section, grade_level, schedule FROM classes WHERE faculty_id = ?`;
+            const query = `SELECT id, class_name, school_id, school_year_id, faculty_id, capacity, section, grade_level, schedule FROM classes WHERE faculty_id = ?`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [faculty_id]);
             return row as ClassProp[];
         } catch(err) {
@@ -58,7 +76,7 @@ export default class Class {
         try {
             const query = `
                 SELECT DISTINCT
-                    c.id, c.class_name, c.school_id, c.faculty_id,
+                    c.id, c.class_name, c.school_id, c.school_year_id, c.faculty_id,
                     c.capacity, c.section, c.grade_level, c.schedule, c.created_at,
                     CONCAT(af.first_name, ' ', af.last_name) as faculty_name,
                     (c.faculty_id = ?) as adviser_role,
@@ -81,7 +99,7 @@ export default class Class {
         try {
             const query = `
                 SELECT 
-                    c.id, c.class_name, c.school_id, c.faculty_id, 
+                    c.id, c.class_name, c.school_id, c.school_year_id, c.faculty_id, 
                     c.capacity, c.section, c.grade_level, c.schedule, c.created_at,
                     CONCAT(f.first_name, ' ', f.last_name) as faculty_name,
                     s.school_name
@@ -99,7 +117,7 @@ export default class Class {
     async getClassById(id: Buffer):Promise<(ClassProp & { faculty_name: string | null }) | null> {
         try {
             const query = `
-                SELECT c.id, c.class_name, c.school_id, c.faculty_id, c.capacity, c.section, c.grade_level, c.schedule, c.created_at,
+                SELECT c.id, c.class_name, c.school_id, c.school_year_id, c.faculty_id, c.capacity, c.section, c.grade_level, c.schedule, c.created_at,
                        CONCAT(f.first_name, ' ', f.last_name) as faculty_name
                 FROM classes c
                 LEFT JOIN faculties f ON c.faculty_id = f.id
@@ -113,12 +131,13 @@ export default class Class {
         }
     }
 
-    async updateClass(id: Buffer, data: Partial<Pick<ClassProp, "class_name" | "faculty_id" | "capacity" | "section" | "grade_level" | "schedule">>):Promise<void> {
+    async updateClass(id: Buffer, data: Partial<Pick<ClassProp, "class_name" | "faculty_id" | "school_year_id" | "capacity" | "section" | "grade_level" | "schedule">>):Promise<void> {
         const fields: string[] = [];
         const values: (string | number | Buffer | null)[] = [];
 
         if(data.class_name !== undefined) { fields.push("class_name = ?"); values.push(data.class_name); }
         if(data.faculty_id !== undefined) { fields.push("faculty_id = ?"); values.push(data.faculty_id); }
+        if(data.school_year_id !== undefined) { fields.push("school_year_id = ?"); values.push(data.school_year_id); }
         if(data.capacity !== undefined) { fields.push("capacity = ?"); values.push(data.capacity); }
         if(data.section !== undefined) { fields.push("section = ?"); values.push(data.section); }
         if(data.grade_level !== undefined) { fields.push("grade_level = ?"); values.push(data.grade_level); }
@@ -144,10 +163,10 @@ export default class Class {
         }
     }
 
-    async assignFaculty(classId: Buffer, facultyId: Buffer, subjectId: Buffer | null):Promise<void> {
+    async assignFaculty(classId: Buffer, facultyId: Buffer, subjectId: Buffer, schoolYearId: number):Promise<void> {
         try {
-            const query = `INSERT INTO class_faculties(class_id, faculty_id, subject_id) VALUES(?,?,?)`;
-            await this.connection.execute<ResultSetHeader>(query, [classId, facultyId, subjectId]);
+            const query = `INSERT INTO class_faculties(class_id, faculty_id, subject_id, school_year_id) VALUES(?,?,?,?)`;
+            await this.connection.execute<ResultSetHeader>(query, [classId, facultyId, subjectId, schoolYearId]);
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
@@ -162,7 +181,7 @@ export default class Class {
         }
     }
 
-    async getFacultiesByClassId(classId: Buffer):Promise<{id: Buffer; first_name: string; last_name: string; email: string; subject_id: Buffer | null; subject_name: string | null}[]> {
+    async getFacultiesByClassId(classId: Buffer):Promise<{id: Buffer; first_name: string; last_name: string; email: string; subject_id: Buffer; subject_name: string}[]> {
         try {
             const query = `
                 SELECT f.id, f.first_name, f.last_name, f.email, cf.subject_id, s.name as subject_name
@@ -172,18 +191,18 @@ export default class Class {
                 WHERE cf.class_id = ?
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [classId]);
-            return row as {id: Buffer; first_name: string; last_name: string; email: string; subject_id: Buffer | null; subject_name: string | null}[];
+            return row as {id: Buffer; first_name: string; last_name: string; email: string; subject_id: Buffer; subject_name: string}[];
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
 
-    async replaceFaculty(classId: Buffer, oldFacultyId: Buffer, newFacultyId: Buffer, subjectId: Buffer | null):Promise<void> {
+    async replaceFaculty(classId: Buffer, oldFacultyId: Buffer, newFacultyId: Buffer, subjectId: Buffer, schoolYearId: number):Promise<void> {
         try {
             const query = `DELETE FROM class_faculties WHERE class_id = ? AND faculty_id = ?`;
             await this.connection.execute<ResultSetHeader>(query, [classId, oldFacultyId]);
-            const insertQuery = `INSERT INTO class_faculties(class_id, faculty_id, subject_id) VALUES(?,?,?)`;
-            await this.connection.execute<ResultSetHeader>(insertQuery, [classId, newFacultyId, subjectId]);
+            const insertQuery = `INSERT INTO class_faculties(class_id, faculty_id, subject_id, school_year_id) VALUES(?,?,?,?)`;
+            await this.connection.execute<ResultSetHeader>(insertQuery, [classId, newFacultyId, subjectId, schoolYearId]);
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
@@ -199,16 +218,66 @@ export default class Class {
         }
     }
 
-    async getAvailableAdvisers(school_id: number):Promise<{id: Buffer; first_name: string; last_name: string; email: string}[]> {
+    async getAvailableAdvisers(school_id: number, schoolYearId: number):Promise<{id: Buffer; first_name: string; last_name: string; email: string}[]> {
         try {
             const query = `
                 SELECT f.id, f.first_name, f.last_name, f.email
                 FROM faculties f
                 WHERE f.school_id = ?
-                AND f.id NOT IN (SELECT c.faculty_id FROM classes c WHERE c.school_id = ?)
+                AND f.id NOT IN (
+                    SELECT c.faculty_id FROM classes c
+                    WHERE c.school_id = ? AND c.school_year_id = ?
+                )
             `;
-            const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id, school_id]);
+            const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id, school_id, schoolYearId]);
             return row as {id: Buffer; first_name: string; last_name: string; email: string}[];
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
+    async isAdviserInSchoolYear(facultyId: Buffer, schoolId: number, schoolYearId: number):Promise<boolean> {
+        try {
+            const query = `
+                SELECT COUNT(*) as cnt FROM classes
+                WHERE faculty_id = ? AND school_id = ? AND school_year_id = ?
+            `;
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [facultyId, schoolId, schoolYearId]);
+            return ((rows[0]?.cnt ?? 0) as number) > 0;
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
+    async hasDuplicateAssignment(classId: Buffer, facultyId: Buffer, subjectId: Buffer, schoolYearId: number):Promise<boolean> {
+        try {
+            const query = `
+                SELECT COUNT(*) as cnt FROM class_faculties
+                WHERE class_id = ? AND faculty_id = ? AND subject_id = ? AND school_year_id = ?
+            `;
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId, facultyId, subjectId, schoolYearId]);
+            return ((rows[0]?.cnt ?? 0) as number) > 0;
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
+    async isAdviserOfClass(classId: Buffer, facultyId: Buffer):Promise<boolean> {
+        try {
+            const query = `SELECT COUNT(*) as cnt FROM classes WHERE id = ? AND faculty_id = ?`;
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId, facultyId]);
+            return ((rows[0]?.cnt ?? 0) as number) > 0;
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
+    async getClassSchoolYear(classId: Buffer):Promise<number | null> {
+        try {
+            const query = `SELECT school_year_id FROM classes WHERE id = ? LIMIT 1`;
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId]);
+            if (rows.length === 0) return null;
+            return (rows[0] as { school_year_id: number }).school_year_id;
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }

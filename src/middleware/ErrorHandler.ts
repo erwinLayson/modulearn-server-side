@@ -32,6 +32,8 @@ function mapMysqlError(err: unknown): AppError | null {
             const messages: Record<string, string> = {
                 uq_class_faculty: "This teacher is already assigned to this class.",
                 unique_class_adviser: "This teacher is already an adviser of another class. A teacher can only be the adviser of one class.",
+                unique_class_adviser_year: "This teacher is already an adviser of another class this school year. A teacher can only be the adviser of one class per school year.",
+                unique_class_faculty_subject_year: "This teacher is already assigned to this subject in this class for this school year.",
                 uq_users_email_school: "An account with this email already exists in this school.",
                 uq_faculties_email_school: "A faculty member with this email already exists in this school.",
                 uq_students_email_school: "A student with this email already exists in this school.",

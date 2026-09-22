@@ -2,6 +2,7 @@ export interface ClassProp {
     id: Buffer;
     class_name: string;
     school_id: number;
+    school_year_id: number;
     faculty_id: Buffer;
     capacity: number | null;
     section: string | null;

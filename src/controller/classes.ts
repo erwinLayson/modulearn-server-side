@@ -14,6 +14,7 @@ import { UUIDToBuffer } from "../helper/UUIDToBuffer.js";
 interface ClassCreateRequest {
     class_name: string;
     school_id: number;
+    school_year_id: number;
     faculty_id: string;
     capacity?: number | null;
     section?: string | null;
@@ -24,6 +25,7 @@ interface ClassCreateRequest {
 interface ClassUpdateRequest {
     class_name?: string | null;
     faculty_id?: string | null;
+    school_year_id?: number | null;
     capacity?: number | null;
     section?: string | null;
     grade_level?: string | null;
@@ -35,12 +37,13 @@ export const registerClass = async (
     res: Response,
     next: NextFunction
 ) => {
-    const {class_name, faculty_id, capacity, section, grade_level, schedule} = req.body;
+    const {class_name, faculty_id, school_year_id, capacity, section, grade_level, schedule} = req.body;
 
     const classData: ClassProp = {
         id: generateRandomUUID(),
         class_name,
         school_id: req.user!.school_id!,
+        school_year_id,
         faculty_id: UUIDToBuffer(faculty_id),
         capacity: capacity ?? null,
         section: section ?? null,
@@ -59,14 +62,15 @@ export const registerClass = async (
 };
 
 export const getClassesBySchoolId = async (
-    req: Request<{school_id: string}>,
+    req: Request<{school_id: string}, {}, {}, {school_year_id?: string}>,
     res: Response,
     next: NextFunction
 ) => {
     const {school_id} = req.params;
+    const schoolYearId = req.query.school_year_id ? Number(req.query.school_year_id) : undefined;
 
     try {
-        const result = await getClassesBySchoolIdWithDetailsService(Number(school_id));
+        const result = await getClassesBySchoolIdWithDetailsService(Number(school_id), schoolYearId);
         sendSuccess(res, "Classes retrieved", result);
     } catch(err) {
         next(err);
@@ -140,13 +144,14 @@ export const updateClass = async (
     const data = req.body;
 
     // Convert request data to ClassProp partial
-    const updateData: Partial<Pick<ClassProp, "class_name" | "faculty_id" | "capacity" | "section" | "grade_level" | "schedule">> = {};
+    const updateData: Partial<Pick<ClassProp, "class_name" | "faculty_id" | "school_year_id" | "capacity" | "section" | "grade_level" | "schedule">> = {};
 
     if (data.class_name !== undefined) updateData.class_name = data.class_name as string;
     if (data.capacity !== undefined) updateData.capacity = data.capacity ?? null;
     if (data.section !== undefined) updateData.section = data.section ?? null;
     if (data.grade_level !== undefined) updateData.grade_level = data.grade_level ?? null;
     if (data.schedule !== undefined) updateData.schedule = data.schedule ?? null;
+    if (data.school_year_id !== undefined) updateData.school_year_id = data.school_year_id as number;
 
     // Handle faculty_id separately due to type narrowing
     const toFacultyIdBuffer = (id: string | null | undefined): Buffer => {
@@ -264,14 +269,19 @@ export const replaceFacultyInClass = async (
 };
 
 export const getAvailableAdvisers = async (
-    req: Request<{school_id: string}>,
+    req: Request<{school_id: string}, {}, {}, {school_year_id?: string}>,
     res: Response,
     next: NextFunction
 ) => {
     const {school_id} = req.params;
+    const schoolYearId = req.query.school_year_id ? Number(req.query.school_year_id) : undefined;
+
+    if (!schoolYearId) {
+        return sendSuccess(res, "Available advisers retrieved", []);
+    }
 
     try {
-        const result = await getAvailableAdvisersService(Number(school_id));
+        const result = await getAvailableAdvisersService(Number(school_id), schoolYearId);
         sendSuccess(res, "Available advisers retrieved", result);
     } catch(err) {
         next(err);

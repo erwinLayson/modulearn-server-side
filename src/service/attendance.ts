@@ -6,6 +6,16 @@ import { bufferToUUID } from "../helper/bufferToUUID.js";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
+const toDateOnly = (value: string | Date): string => {
+    if (typeof value === "string") {
+        return value.slice(0, 10);
+    }
+    const d = new Date(value);
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${month}-${day}`;
+};
+
 export const markAttendanceService = async (
     classId: string,
     subjectId: string,
@@ -112,7 +122,8 @@ export const createAttendanceSessionService = async (
     classId: string,
     subjectId: string,
     createdBy: string,
-    date: string
+    date: string,
+    periodId: number
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -123,6 +134,13 @@ export const createAttendanceSessionService = async (
         }
         if (!DATE_ONLY.test(date)) {
             throw new BadRequestError("date must be in YYYY-MM-DD format");
+        }
+        if (periodId === undefined || periodId === null || !Number.isFinite(Number(periodId))) {
+            throw new BadRequestError("Academic period is required");
+        }
+        const periodIdNum = Number(periodId);
+        if (!Number.isInteger(periodIdNum) || periodIdNum < 1) {
+            throw new BadRequestError("Academic period not found");
         }
 
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
@@ -135,6 +153,17 @@ export const createAttendanceSessionService = async (
         const classInfo = await classModel.getClassById(classBuf);
         if (!classInfo) {
             throw new NotFoundError("Class not found", 404);
+        }
+
+        // Validate the academic period: must exist and belong to the class's school
+        const AcademicPeriodModel = (await import("../model/academicPeriods.js")).default;
+        const periodModel = new AcademicPeriodModel(connection);
+        const period = await periodModel.getById(periodIdNum);
+        if (!period) {
+            throw new BadRequestError("Academic period not found");
+        }
+        if (period.school_id !== classInfo.school_id) {
+            throw new BadRequestError("Academic period does not belong to this school");
         }
 
         const createdByBuf = UUIDToBuffer(createdBy);
@@ -155,6 +184,13 @@ export const createAttendanceSessionService = async (
             throw new BadRequestError("Date is before the class was created");
         }
 
+        // Attendance date must fall inside the selected academic period
+        const periodStart = toDateOnly(period.start_date);
+        const periodEnd = toDateOnly(period.end_date);
+        if (date < periodStart || date > periodEnd) {
+            throw new BadRequestError("Attendance date must fall within the selected academic period");
+        }
+
         // Check for existing session in attendance_sessions
         const existing = await attendanceModel.sessionExists(classBuf, subjectBuf, date);
         if (existing) {
@@ -167,9 +203,9 @@ export const createAttendanceSessionService = async (
             throw new BadRequestError(`Attendance records for this subject on ${date} already exist. Please use the edit endpoint to update.`);
         }
 
-        await attendanceModel.createSession(classBuf, subjectBuf, date, createdByBuf);
+        await attendanceModel.createSession(classBuf, subjectBuf, date, periodIdNum, createdByBuf);
 
-        return { message: "Attendance session created", date, subject_id: subjectId };
+        return { message: "Attendance session created", date, subject_id: subjectId, period_id: periodIdNum };
     } finally {
         connection.release();
     }
@@ -373,6 +409,7 @@ export const getAttendanceHistoryService = async (
         subjectId?: string | undefined;
         studentId?: string | undefined;
         teacherId?: string | undefined;
+        periodId?: number | undefined;
         dateFrom?: string | undefined;
         dateTo?: string | undefined;
     },
@@ -393,6 +430,7 @@ export const getAttendanceHistoryService = async (
             studentId?: Buffer;
             teacherId?: Buffer;
             schoolId?: number;
+            periodId?: number;
             dateFrom?: string;
             dateTo?: string;
         } = { schoolId };
@@ -417,6 +455,13 @@ export const getAttendanceHistoryService = async (
 
         if (filters.teacherId) {
             modelFilters.teacherId = UUIDToBuffer(filters.teacherId);
+        }
+
+        if (filters.periodId !== undefined) {
+            if (!Number.isInteger(filters.periodId) || filters.periodId < 1) {
+                throw new BadRequestError("period_id must be a valid academic period id");
+            }
+            modelFilters.periodId = filters.periodId;
         }
 
         if (filters.dateFrom && DATE_ONLY.test(filters.dateFrom)) {

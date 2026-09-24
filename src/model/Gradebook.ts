@@ -9,7 +9,6 @@ export interface GradingWeightRow {
     subject_id: Buffer;
     category: GradingCategory;
     weight: number;
-    period_id: number | null;
 }
 
 export interface GradeItemRow {
@@ -94,30 +93,25 @@ export default class Gradebook {
 
     // --- Grading Weights ---
 
-    async getGradingWeights(classId: Buffer, subjectId: Buffer, periodId?: number): Promise<GradingWeightRow[]> {
+    async getGradingWeights(classId: Buffer, subjectId: Buffer): Promise<GradingWeightRow[]> {
         try {
-            let query = `SELECT id, class_id, subject_id, category, weight, period_id FROM grading_weights WHERE class_id = ? AND subject_id = ?`;
-            const params: (Buffer | number)[] = [classId, subjectId];
-            if (periodId !== undefined) {
-                query += ` AND period_id = ?`;
-                params.push(periodId);
-            }
-            const [rows] = await this.connection.execute<RowDataPacket[]>(query, params);
+            const query = `SELECT id, class_id, subject_id, category, weight FROM grading_weights WHERE class_id = ? AND subject_id = ?`;
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId, subjectId]);
             return rows as GradingWeightRow[];
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
 
-    async upsertGradingWeights(classId: Buffer, subjectId: Buffer, weights: { category: GradingCategory; weight: number }[], periodId?: number): Promise<void> {
+    async upsertGradingWeights(classId: Buffer, subjectId: Buffer, weights: { category: GradingCategory; weight: number }[]): Promise<void> {
         try {
             for (const w of weights) {
                 const query = `
-                    INSERT INTO grading_weights (class_id, subject_id, category, weight, period_id)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO grading_weights (class_id, subject_id, category, weight)
+                    VALUES (?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE weight = VALUES(weight)
                 `;
-                await this.connection.execute<ResultSetHeader>(query, [classId, subjectId, w.category, w.weight, periodId ?? null]);
+                await this.connection.execute<ResultSetHeader>(query, [classId, subjectId, w.category, w.weight]);
             }
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
@@ -148,7 +142,7 @@ export default class Gradebook {
 
     async getGradeItemById(id: Buffer): Promise<GradeItemRow | null> {
         try {
-            const query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, created_at FROM grade_items WHERE id = ?`;
+            const query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id, created_at FROM grade_items WHERE id = ?`;
             const [rows] = await this.connection.execute<RowDataPacket[]>(query, [id]);
             return (rows as GradeItemRow[])[0] || null;
         } catch (err) {
@@ -167,10 +161,11 @@ export default class Gradebook {
         }
     }
 
-    async updateGradeItem(id: Buffer, title: string, category: GradeItemCategory, maxScore: number, dueDate: string | null): Promise<void> {
+    async updateGradeItem(id: Buffer, title: string, category: GradeItemCategory, maxScore: number, dueDate: string | null, periodId?: number): Promise<void> {
         try {
-            const query = `UPDATE grade_items SET title = ?, category = ?, max_score = ?, due_date = ? WHERE id = ?`;
-            await this.connection.execute<ResultSetHeader>(query, [title, category, maxScore, dueDate || null, id]);
+            // period_id is only backfilled when NULL (legacy rows); an existing period is never overwritten here
+            const query = `UPDATE grade_items SET title = ?, category = ?, max_score = ?, due_date = ?, period_id = COALESCE(period_id, ?) WHERE id = ?`;
+            await this.connection.execute<ResultSetHeader>(query, [title, category, maxScore, dueDate || null, periodId ?? null, id]);
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }

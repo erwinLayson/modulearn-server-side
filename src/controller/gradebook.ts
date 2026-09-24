@@ -22,9 +22,8 @@ export const getGradingWeights = async (
     next: NextFunction
 ) => {
     const { classId, subjectId } = req.params;
-    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     try {
-        const result = await getGradingWeightsService(classId, subjectId, periodId);
+        const result = await getGradingWeightsService(classId, subjectId);
         sendSuccess(res, "Grading weights retrieved", result);
     } catch (err) {
         next(err);
@@ -38,10 +37,9 @@ export const updateGradingWeights = async (
 ) => {
     const { classId, subjectId } = req.params;
     const { weights } = req.body;
-    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     const facultyId = req.user!.id;
     try {
-        const result = await updateGradingWeightsService(classId, subjectId, facultyId, weights, periodId);
+        const result = await updateGradingWeightsService(classId, subjectId, facultyId, weights);
         sendSuccess(res, result.message, result);
     } catch (err) {
         next(err);
@@ -67,13 +65,13 @@ export const getGradeItems = async (
 };
 
 export const createGradeItem = async (
-    req: Request<{ classId: string; subjectId: string }, {}, { category: string; title: string; max_score: number; due_date?: string | null }> & { user?: TokenPayload },
+    req: Request<{ classId: string; subjectId: string }, {}, { category: string; title: string; max_score: number; due_date?: string | null; period_id?: number }> & { user?: TokenPayload },
     res: Response,
     next: NextFunction
 ) => {
     const { classId, subjectId } = req.params;
-    const { category, title, max_score, due_date } = req.body;
-    const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
+    const { category, title, max_score, due_date, period_id } = req.body;
+    const periodId = period_id !== undefined && period_id !== null ? Number(period_id) : undefined;
     const facultyId = req.user!.id;
     try {
         const result = await createGradeItemService(classId, subjectId, facultyId, category, title, max_score, due_date ?? null, periodId);
@@ -84,15 +82,16 @@ export const createGradeItem = async (
 };
 
 export const updateGradeItem = async (
-    req: Request<{ id: string }, {}, { title: string; category: string; max_score: number; due_date?: string | null }> & { user?: TokenPayload },
+    req: Request<{ id: string }, {}, { title: string; category: string; max_score: number; due_date?: string | null; period_id?: number }> & { user?: TokenPayload },
     res: Response,
     next: NextFunction
 ) => {
     const { id } = req.params;
-    const { title, category, max_score, due_date } = req.body;
+    const { title, category, max_score, due_date, period_id } = req.body;
+    const periodId = period_id !== undefined && period_id !== null ? Number(period_id) : undefined;
     const facultyId = req.user!.id;
     try {
-        const result = await updateGradeItemService(id, facultyId, title, category, max_score, due_date ?? null);
+        const result = await updateGradeItemService(id, facultyId, title, category, max_score, due_date ?? null, periodId);
         sendSuccess(res, result.message, result);
     } catch (err) {
         next(err);

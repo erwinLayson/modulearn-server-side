@@ -256,6 +256,7 @@ export default class Class {
                 WHERE class_id = ? AND faculty_id = ? AND subject_id = ? AND school_year_id = ?
             `;
             const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId, facultyId, subjectId, schoolYearId]);
+
             return ((rows[0]?.cnt ?? 0) as number) > 0;
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);

@@ -21,7 +21,7 @@ import {databasePool} from "../config/database.js";
 import AttendanceModel from "../model/attendance.js";
 import {UUIDToBuffer} from "../helper/UUIDToBuffer.js";
 import {bufferToUUID} from "../helper/bufferToUUID.js";
-import {ForbiddenError} from "../helper/error.js";
+import {ForbiddenError, BadRequestError} from "../helper/error.js";
 
 interface AttendanceMarkRequest {
     records: { student_id: string; status: "present" | "absent" }[];
@@ -33,6 +33,7 @@ interface AttendanceSessionRequest {
     class_id: string;
     subject_id: string;
     date: string;
+    period_id: number;
 }
 
 export const createAttendanceSession = async (
@@ -40,11 +41,12 @@ export const createAttendanceSession = async (
     res: Response,
     next: NextFunction
 ) => {
-    const {class_id, subject_id, date} = req.body;
+    const {class_id, subject_id, date, period_id} = req.body;
     const createdBy = req.user!.id;
+    const periodId = period_id !== undefined && period_id !== null ? Number(period_id) : Number.NaN;
 
     try {
-        const result = await createAttendanceSessionService(class_id, subject_id, createdBy, date);
+        const result = await createAttendanceSessionService(class_id, subject_id, createdBy, date, periodId);
         sendSuccess(res, "Attendance session created successfully", result, 201);
     } catch(err) {
         next(err);
@@ -59,6 +61,14 @@ export const getClassSessions = async (
     const {classId} = req.params;
     const markedBy = req.user!.id;
     const isSchoolAdmin = req.user?.role === "school_admin" || req.user?.role === "super_admin";
+    const periodId = typeof req.query.period_id === "string" && req.query.period_id !== ""
+        ? Number(req.query.period_id)
+        : undefined;
+
+    if (periodId !== undefined && (!Number.isInteger(periodId) || periodId < 1)) {
+        next(new BadRequestError("period_id must be a valid academic period id"));
+        return;
+    }
 
     try {
         const pool = databasePool();
@@ -76,12 +86,17 @@ export const getClassSessions = async (
                 }
             }
 
-            const sessions = await attendanceModel.getSessionsByClass(classBuf);
+            const sessions = await attendanceModel.getSessionsByClass(classBuf, periodId);
             sendSuccess(res, "Sessions retrieved", {
                 data: sessions.map(s => ({
-                    attendance_date: s.attendance_date,
+                    id: s.id,
+                    class_id: bufferToUUID(s.class_id),
                     subject_id: bufferToUUID(s.subject_id),
-                    subject_name: s.subject_name,
+                    attendance_date: s.attendance_date,
+                    period_id: s.period_id,
+                    period_name: s.period_name,
+                    created_by: bufferToUUID(s.created_by),
+                    created_at: s.created_at,
                 })),
             });
         } finally {
@@ -178,6 +193,9 @@ export const getAttendanceHistory = async (
         subjectId: req.query.subject_id as string | undefined,
         studentId: req.query.student_id as string | undefined,
         teacherId: req.query.teacher_id as string | undefined,
+        periodId: typeof req.query.period_id === "string" && req.query.period_id !== ""
+            ? Number(req.query.period_id)
+            : undefined,
         dateFrom: req.query.date_from as string | undefined,
         dateTo: req.query.date_to as string | undefined,
     } as const;

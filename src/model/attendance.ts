@@ -165,6 +165,7 @@ export default class Attendance {
             studentId?: Buffer;
             teacherId?: Buffer;
             schoolId?: number;
+            periodId?: number;
             dateFrom?: string;
             dateTo?: string;
         },
@@ -195,6 +196,10 @@ export default class Attendance {
                 conditions.push(`c.school_id = ?`);
                 params.push(filters.schoolId);
             }
+            if (filters.periodId !== undefined) {
+                conditions.push(`aps.period_id = ?`);
+                params.push(filters.periodId);
+            }
             if (filters.dateFrom) {
                 conditions.push(`ar.attendance_date >= ?`);
                 params.push(filters.dateFrom);
@@ -205,6 +210,12 @@ export default class Attendance {
             }
 
             const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+            const sessionJoin = `
+                LEFT JOIN attendance_sessions aps
+                    ON aps.class_id = ar.class_id
+                    AND aps.subject_id = ar.subject_id
+                    AND aps.attendance_date = ar.attendance_date
+            `;
 
             // Count total
             const countQuery = `
@@ -212,6 +223,7 @@ export default class Attendance {
                 FROM attendance_records ar
                 INNER JOIN classes c ON c.id = ar.class_id
                 LEFT JOIN class_faculties cf ON cf.class_id = ar.class_id AND cf.subject_id = ar.subject_id
+                ${sessionJoin}
                 ${whereClause}
             `;
             const [countRow] = await this.connection.execute<RowDataPacket[]>(countQuery, params);
@@ -233,6 +245,7 @@ export default class Attendance {
                 INNER JOIN classes c ON c.id = ar.class_id
                 INNER JOIN subjects s ON s.id = ar.subject_id
                 LEFT JOIN class_faculties cf ON cf.class_id = ar.class_id AND cf.subject_id = ar.subject_id
+                ${sessionJoin}
                 ${whereClause}
                 GROUP BY ar.class_id, ar.subject_id, DATE_FORMAT(ar.attendance_date, '%Y-%m-%d')
                 ORDER BY ar.attendance_date DESC, ar.class_id, ar.subject_id
@@ -734,14 +747,15 @@ export default class Attendance {
         classId: Buffer,
         subjectId: Buffer,
         attendanceDate: string,
+        periodId: number,
         createdBy: Buffer
     ): Promise<void> {
         try {
             const query = `
-                INSERT INTO attendance_sessions(class_id, subject_id, attendance_date, created_by)
-                VALUES(?, ?, ?, ?)
+                INSERT INTO attendance_sessions(class_id, subject_id, attendance_date, period_id, created_by)
+                VALUES(?, ?, ?, ?, ?)
             `;
-            await this.connection.execute<ResultSetHeader>(query, [classId, subjectId, attendanceDate, createdBy]);
+            await this.connection.execute<ResultSetHeader>(query, [classId, subjectId, attendanceDate, periodId, createdBy]);
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
@@ -764,19 +778,53 @@ export default class Attendance {
         }
     }
 
-    async getSessionsByClass(classId: Buffer): Promise<{ attendance_date: string; subject_id: Buffer; subject_name: string }[]> {
+    async getSessionsByClass(
+        classId: Buffer,
+        periodId?: number
+    ): Promise<{
+        id: number;
+        class_id: Buffer;
+        subject_id: Buffer;
+        attendance_date: string;
+        period_id: number;
+        period_name: string;
+        created_by: Buffer;
+        created_at: Date;
+    }[]> {
         try {
-            const query = `
-                SELECT DATE_FORMAT(ast.attendance_date, '%Y-%m-%d') as attendance_date,
+            let query = `
+                SELECT ast.id,
+                       ast.class_id,
                        ast.subject_id,
-                       s.name as subject_name
+                       DATE_FORMAT(ast.attendance_date, '%Y-%m-%d') as attendance_date,
+                       ast.period_id,
+                       ap.name as period_name,
+                       ast.created_by,
+                       ast.created_at
                 FROM attendance_sessions ast
-                INNER JOIN subjects s ON s.id = ast.subject_id
+                INNER JOIN academic_periods ap ON ap.id = ast.period_id
                 WHERE ast.class_id = ?
-                ORDER BY ast.attendance_date DESC, s.name
             `;
-            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId]);
-            return rows as { attendance_date: string; subject_id: Buffer; subject_name: string }[];
+            const params: (Buffer | number)[] = [classId];
+
+            if (periodId !== undefined) {
+                query += ` AND ast.period_id = ?`;
+                params.push(periodId);
+            }
+
+            query += ` ORDER BY ast.attendance_date DESC`;
+
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, params);
+            return rows as {
+                id: number;
+                class_id: Buffer;
+                subject_id: Buffer;
+                attendance_date: string;
+                period_id: number;
+                period_name: string;
+                created_by: Buffer;
+                created_at: Date;
+            }[];
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }

@@ -5,10 +5,44 @@ import { GRADING_CATEGORIES } from "../constant/gradebook.js";
 import { NotFoundError, BadRequestError, ForbiddenError } from "../helper/error.js";
 import { bufferToUUID } from "../helper/bufferToUUID.js";
 import { computeNormalizedFinalGrade } from "../helper/gradeCalculation.js";
+import type { PoolConnection } from "mysql2/promise";
+
+// Validates a client-provided academic period: required, exists, and belongs to the class's school.
+const validateGradeItemPeriod = async (
+    connection: PoolConnection,
+    classId: Buffer,
+    periodId: number | undefined | null
+): Promise<number> => {
+    const raw = periodId as unknown;
+    if (raw === undefined || raw === null || raw === "" || (typeof raw === "string" && raw.trim() === "")) {
+        throw new BadRequestError("Academic period is required");
+    }
+    const periodIdNum = Number(raw);
+    if (!Number.isInteger(periodIdNum) || periodIdNum < 1) {
+        throw new BadRequestError("Academic period not found");
+    }
+
+    const classModel = new (await import("../model/classes.js")).default(connection);
+    const classInfo = await classModel.getClassById(classId);
+    if (!classInfo) {
+        throw new NotFoundError("Class not found", 404);
+    }
+
+    const AcademicPeriodModel = (await import("../model/academicPeriods.js")).default;
+    const period = await new AcademicPeriodModel(connection).getById(periodIdNum);
+    if (!period) {
+        throw new BadRequestError("Academic period not found");
+    }
+    if (period.school_id !== classInfo.school_id) {
+        throw new BadRequestError("Academic period does not belong to this school");
+    }
+
+    return periodIdNum;
+};
 
 // --- Grading Weights ---
 
-export const getGradingWeightsService = async (classId: string, subjectId: string, periodId?: number) => {
+export const getGradingWeightsService = async (classId: string, subjectId: string) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -16,12 +50,11 @@ export const getGradingWeightsService = async (classId: string, subjectId: strin
         const model = new GradebookModel(connection);
         const classBuf = UUIDToBuffer(classId);
         const subjectBuf = UUIDToBuffer(subjectId);
-        const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
+        const weights = await model.getGradingWeights(classBuf, subjectBuf);
         return weights.map(w => ({
             id: w.id,
             category: w.category,
             weight: Number(w.weight),
-            period_id: w.period_id,
         }));
     } finally {
         connection.release();
@@ -32,8 +65,7 @@ export const updateGradingWeightsService = async (
     classId: string,
     subjectId: string,
     facultyId: string,
-    weights: { category: string; weight: number }[],
-    periodId?: number
+    weights: { category: string; weight: number }[]
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -74,7 +106,7 @@ export const updateGradingWeightsService = async (
             throw new BadRequestError(`Grading weights must total exactly 100%. Current total: ${totalWeight}%`);
         }
 
-        await model.upsertGradingWeights(classBuf, subjectBuf, processedWeights, periodId);
+        await model.upsertGradingWeights(classBuf, subjectBuf, processedWeights);
         return { message: "Grading weights updated successfully" };
     } finally {
         connection.release();
@@ -116,7 +148,7 @@ export const createGradeItemService = async (
     title: string,
     maxScore: number,
     dueDate: string | null,
-    periodId?: number
+    periodId: number | undefined
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -157,7 +189,10 @@ export const createGradeItemService = async (
             throw new BadRequestError("due_date must be in YYYY-MM-DD format");
         }
 
-        const id = await model.createGradeItem(classBuf, subjectBuf, facultyBuf, category as GradeItemCategory, title.trim(), maxScore, dueDate, periodId);
+        // Academic period is required and must belong to the class's school
+        const periodIdNum = await validateGradeItemPeriod(connection, classBuf, periodId);
+
+        const id = await model.createGradeItem(classBuf, subjectBuf, facultyBuf, category as GradeItemCategory, title.trim(), maxScore, dueDate, periodIdNum);
         return { id: bufferToUUID(id), message: "Grade item created successfully" };
     } finally {
         connection.release();
@@ -170,7 +205,8 @@ export const updateGradeItemService = async (
     title: string,
     category: string,
     maxScore: number,
-    dueDate: string | null
+    dueDate: string | null,
+    periodId: number | undefined
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -179,6 +215,11 @@ export const updateGradeItemService = async (
         const model = new GradebookModel(connection);
         const itemBuf = UUIDToBuffer(itemId);
         const facultyBuf = UUIDToBuffer(facultyId);
+
+        const item = await model.getGradeItemById(itemBuf);
+        if (!item) {
+            throw new NotFoundError("Grade item not found", 404);
+        }
 
         // Verify ownership
         const owned = await model.isGradeItemOwnedByFaculty(itemBuf, facultyBuf);
@@ -202,7 +243,15 @@ export const updateGradeItemService = async (
             throw new BadRequestError("due_date must be in YYYY-MM-DD format");
         }
 
-        await model.updateGradeItem(itemBuf, title.trim(), category as GradeItemCategory, maxScore, dueDate);
+        // Academic period is required on every update (shown read-only in the UI)
+        const periodIdNum = await validateGradeItemPeriod(connection, item.class_id, periodId);
+
+        // An existing item's period can never be changed (or dropped) during ordinary editing
+        if (item.period_id !== null && item.period_id !== undefined && Number(item.period_id) !== periodIdNum) {
+            throw new BadRequestError("Academic period cannot be changed during editing");
+        }
+
+        await model.updateGradeItem(itemBuf, title.trim(), category as GradeItemCategory, maxScore, dueDate, periodIdNum);
         return { message: "Grade item updated successfully" };
     } finally {
         connection.release();
@@ -260,7 +309,7 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
         }
 
         const students = await model.getEnrolledStudents(classBuf, currentSy.id);
-        const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
+        const weights = await model.getGradingWeights(classBuf, subjectBuf);
 
         // Build grade map: grade_item_id -> student_id -> score
         const gradeMap = new Map<string, Map<string, number>>();
@@ -355,6 +404,7 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
                 title: i.title,
                 max_score: Number(i.max_score),
                 due_date: i.due_date,
+                period_id: i.period_id,
             })),
             students: results,
         };
@@ -465,7 +515,7 @@ export const getStudentGradesForSubjectService = async (
             scoreMap.set(bufferToUUID(s.grade_item_id), Number(s.score));
         }
 
-        const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
+        const weights = await model.getGradingWeights(classBuf, subjectBuf);
         const weightMap = new Map<string, number>();
         for (const w of weights) {
             weightMap.set(w.category, Number(w.weight));
@@ -600,7 +650,7 @@ export const getStudentSummaryService = async (studentId: string, schoolId: numb
                 scoreMap.set(bufferToUUID(s.grade_item_id), Number(s.score));
             }
 
-            const weights = await model.getGradingWeights(classBuf, subjectBuf, periodId);
+            const weights = await model.getGradingWeights(classBuf, subjectBuf);
             const weightMap = new Map<string, number>();
             for (const w of weights) {
                 weightMap.set(w.category, Number(w.weight));

@@ -8,6 +8,7 @@ export interface ClassProp {
     section: string | null;
     grade_level: string | null;
     schedule: any | null;
+    is_active?: number;
     created_at?: Date;
 }
 

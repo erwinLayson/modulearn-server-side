@@ -43,7 +43,7 @@ export default class Faculty {
     async getFacultiesBySchoolId(school_id: number):Promise<FacultyProp[]> {
         try {
             const query = `
-                SELECT id, first_name, last_name, email, school_id, contact_number, admin_id, faculty_role FROM faculties WHERE school_id = ?
+                SELECT id, first_name, last_name, email, school_id, contact_number, admin_id, faculty_role, is_active FROM faculties WHERE school_id = ?
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as FacultyProp[];
@@ -56,7 +56,7 @@ export default class Faculty {
     async getFacultyById(id: Buffer):Promise<FacultyProp | null> {
         try {
             const query = `
-                SELECT id, first_name, last_name, email, school_id, contact_number, admin_id, faculty_role FROM faculties WHERE id = ? LIMIT 1
+                SELECT id, first_name, last_name, email, school_id, contact_number, admin_id, faculty_role, is_active FROM faculties WHERE id = ? LIMIT 1
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [id]);
             if(row.length === 0) return null;
@@ -107,13 +107,28 @@ export default class Faculty {
         }
     }
 
-    // ====================== DELETE FACULTY ========================
+    // ====================== DELETE FACULTY (soft) ========================
     async deleteFaculty(id: Buffer):Promise<void> {
         try {
-            const query = `
-                DELETE FROM faculties WHERE id = ?
-            `;
-            await this.connection.execute<ResultSetHeader>(query, [id]);
+            const [refs] = await this.connection.execute<RowDataPacket[]>(
+                `SELECT
+                    (SELECT COUNT(*) FROM classes WHERE faculty_id = ?) +
+                    (SELECT COUNT(*) FROM class_faculties WHERE faculty_id = ?) +
+                    (SELECT COUNT(*) FROM grade_items WHERE faculty_id = ?) +
+                    (SELECT COUNT(*) FROM grades WHERE recorded_by = ?) AS ref_count`,
+                [id, id, id, id]
+            );
+            const refCount = Number(refs[0]?.ref_count ?? 0);
+            // Always soft-delete faculty so historical academic data remains intact
+            await this.connection.execute<ResultSetHeader>(
+                `UPDATE faculties SET is_active = 0 WHERE id = ?`,
+                [id]
+            );
+            await this.connection.execute<ResultSetHeader>(
+                `UPDATE users SET status = 'inactive' WHERE id = ?`,
+                [id]
+            );
+            void refCount;
         }catch(err) {
             throw new InternalServerError("Deleting faculty Internal Server Error", 500, err);
         }

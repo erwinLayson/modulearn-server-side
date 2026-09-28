@@ -4,7 +4,10 @@ export interface EnrollmentProp {
     class_id: Buffer;
     school_year_id: number | null;
     grade_level: number | null;
-    status: "active" | "dropped" | "completed";
+    status: "active" | "dropped" | "completed" | "transferred";
+    class_name_snapshot?: string | null;
+    section_snapshot?: string | null;
+    adviser_name_snapshot?: string | null;
 }
 
 export interface EnrollmentWithDetails {
@@ -18,7 +21,7 @@ export interface EnrollmentWithDetails {
     grade_level: string | null;
     school_year_id: number | null;
     school_year_name: string | null;
-    status: "active" | "dropped" | "completed";
+    status: "active" | "dropped" | "completed" | "transferred";
     enrolled_at: string;
     subjects: { id: string; name: string; teacher_name: string | null }[];
 }

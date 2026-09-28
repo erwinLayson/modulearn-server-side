@@ -12,7 +12,9 @@ import {
     getStudentGradesForSubjectService,
     getStudentSummaryService,
 } from "../service/gradebook.js";
+import { finalizePeriodGradesService, correctFinalizationService } from "../service/finalization.js";
 import { sendSuccess } from "../helper/sendSuccess.js";
+import { BadRequestError } from "../helper/error.js";
 
 // --- Grading Weights ---
 
@@ -177,6 +179,53 @@ export const getStudentSummary = async (
     try {
         const result = await getStudentSummaryService(studentId, schoolId, periodId);
         sendSuccess(res, "Student grade summary retrieved", result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+// --- Finalization ---
+
+export const finalizePeriod = async (
+    req: Request<{}, {}, { class_id: string; subject_id: string; period_id?: number | null }> & { user?: TokenPayload },
+    res: Response,
+    next: NextFunction
+) => {
+    const { class_id, subject_id, period_id } = req.body;
+    try {
+        const periodIdNum = period_id === undefined || period_id === null ? null : Number(period_id);
+        if (periodIdNum !== null && (!Number.isInteger(periodIdNum) || periodIdNum < 1)) {
+            throw new BadRequestError("Invalid period_id");
+        }
+        const result = await finalizePeriodGradesService(
+            class_id,
+            subject_id,
+            req.user!.id,
+            periodIdNum,
+            req.user!.role
+        );
+        sendSuccess(res, result.message, result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const correctFinalization = async (
+    req: Request<{ id: string }, {}, { final_grade: number | null; reason: string }> & { user?: TokenPayload },
+    res: Response,
+    next: NextFunction
+) => {
+    const id = Number(req.params.id);
+    const { final_grade, reason } = req.body;
+    try {
+        const result = await correctFinalizationService(
+            id,
+            final_grade ?? null,
+            req.user!.id,
+            req.user!.role,
+            reason ?? ""
+        );
+        sendSuccess(res, result.message, result);
     } catch (err) {
         next(err);
     }

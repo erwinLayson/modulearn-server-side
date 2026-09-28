@@ -18,7 +18,7 @@ export default class Class {
 
     async getClassesBySchoolId(school_id: number):Promise<ClassProp[]> {
         try {
-            const query = `SELECT id, class_name, school_id, school_year_id, faculty_id, capacity, section, grade_level, schedule FROM classes WHERE school_id = ?`;
+            const query = `SELECT id, class_name, school_id, school_year_id, faculty_id, capacity, section, grade_level, schedule, is_active FROM classes WHERE school_id = ? AND is_active = 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as ClassProp[];
         } catch(err) {
@@ -35,7 +35,7 @@ export default class Class {
                     CONCAT(f.first_name, ' ', f.last_name) as faculty_name
                 FROM classes c
                 LEFT JOIN faculties f ON c.faculty_id = f.id
-                WHERE c.school_id = ?
+                WHERE c.school_id = ? AND c.is_active = 1
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as ClassWithDetails[];
@@ -53,7 +53,7 @@ export default class Class {
                     CONCAT(f.first_name, ' ', f.last_name) as faculty_name
                 FROM classes c
                 LEFT JOIN faculties f ON c.faculty_id = f.id
-                WHERE c.school_id = ? AND c.school_year_id = ?
+                WHERE c.school_id = ? AND c.school_year_id = ? AND c.is_active = 1
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id, schoolYearId]);
             return row as ClassWithDetails[];
@@ -156,6 +156,18 @@ export default class Class {
 
     async deleteClass(id: Buffer):Promise<void> {
         try {
+            const [refs] = await this.connection.execute<RowDataPacket[]>(
+                `SELECT COUNT(*) AS ref_count FROM enrollments WHERE class_id = ?`,
+                [id]
+            );
+            const refCount = Number(refs[0]?.ref_count ?? 0);
+            if (refCount > 0) {
+                await this.connection.execute<ResultSetHeader>(
+                    `UPDATE classes SET is_active = 0 WHERE id = ?`,
+                    [id]
+                );
+                return;
+            }
             const query = `DELETE FROM classes WHERE id = ?`;
             await this.connection.execute<ResultSetHeader>(query, [id]);
         } catch(err) {
@@ -188,7 +200,7 @@ export default class Class {
                 FROM faculties f
                 INNER JOIN class_faculties cf ON cf.faculty_id = f.id
                 LEFT JOIN subjects s ON cf.subject_id = s.id
-                WHERE cf.class_id = ?
+                WHERE cf.class_id = ? AND f.is_active = 1
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [classId]);
             return row as {id: Buffer; first_name: string; last_name: string; email: string; subject_id: Buffer; subject_name: string}[];
@@ -210,7 +222,7 @@ export default class Class {
 
     async getFacultiesBySchoolId(school_id: number):Promise<{id: Buffer; first_name: string; last_name: string; email: string}[]> {
         try {
-            const query = `SELECT id, first_name, last_name, email FROM faculties WHERE school_id = ?`;
+            const query = `SELECT id, first_name, last_name, email FROM faculties WHERE school_id = ? AND is_active = 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as {id: Buffer; first_name: string; last_name: string; email: string}[];
         } catch(err) {
@@ -224,6 +236,7 @@ export default class Class {
                 SELECT f.id, f.first_name, f.last_name, f.email
                 FROM faculties f
                 WHERE f.school_id = ?
+                AND f.is_active = 1
                 AND f.id NOT IN (
                     SELECT c.faculty_id FROM classes c
                     WHERE c.school_id = ? AND c.school_year_id = ?

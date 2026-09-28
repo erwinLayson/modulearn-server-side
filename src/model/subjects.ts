@@ -18,7 +18,7 @@ export default class Subject {
 
     async getSubjectsBySchoolId(school_id: number):Promise<SubjectProp[]> {
         try {
-            const query = `SELECT id, name, subject_code, description, school_id, admin_id, created_at, updated_at FROM subjects WHERE school_id = ?`;
+            const query = `SELECT id, name, subject_code, description, school_id, admin_id, is_active, created_at, updated_at FROM subjects WHERE school_id = ? AND is_active = 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as SubjectProp[];
         } catch(err) {
@@ -58,6 +58,20 @@ export default class Subject {
 
     async deleteSubject(id: Buffer):Promise<void> {
         try {
+            const [refs] = await this.connection.execute<RowDataPacket[]>(
+                `SELECT
+                    (SELECT COUNT(*) FROM enrollment_subjects WHERE subject_id = ?) +
+                    (SELECT COUNT(*) FROM grade_items WHERE subject_id = ?) AS ref_count`,
+                [id, id]
+            );
+            const refCount = Number(refs[0]?.ref_count ?? 0);
+            if (refCount > 0) {
+                await this.connection.execute<ResultSetHeader>(
+                    `UPDATE subjects SET is_active = 0 WHERE id = ?`,
+                    [id]
+                );
+                return;
+            }
             const query = `DELETE FROM subjects WHERE id = ?`;
             await this.connection.execute<ResultSetHeader>(query, [id]);
         } catch(err) {
@@ -67,7 +81,7 @@ export default class Subject {
 
     async getAllSubjects():Promise<SubjectProp[]> {
         try {
-            const query = `SELECT id, name, subject_code, description, school_id, admin_id, created_at, updated_at FROM subjects`;
+            const query = `SELECT id, name, subject_code, description, school_id, admin_id, is_active, created_at, updated_at FROM subjects WHERE is_active = 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query);
             return row as SubjectProp[];
         } catch(err) {
@@ -99,7 +113,7 @@ export default class Subject {
                 SELECT f.id, f.first_name, f.last_name, f.email
                 FROM faculties f
                 INNER JOIN subject_faculties sf ON sf.faculty_id = f.id
-                WHERE sf.subject_id = ?
+                WHERE sf.subject_id = ? AND f.is_active = 1
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [subjectId]);
             return row as {id: Buffer; first_name: string; last_name: string; email: string}[];
@@ -110,7 +124,7 @@ export default class Subject {
 
     async getFacultiesBySchoolId(school_id: number):Promise<{id: Buffer; first_name: string; last_name: string; email: string}[]> {
         try {
-            const query = `SELECT id, first_name, last_name, email FROM faculties WHERE school_id = ?`;
+            const query = `SELECT id, first_name, last_name, email FROM faculties WHERE school_id = ? AND is_active = 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as {id: Buffer; first_name: string; last_name: string; email: string}[];
         } catch(err) {

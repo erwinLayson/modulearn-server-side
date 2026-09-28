@@ -8,8 +8,13 @@ export default class Enrollment {
     async enrollStudent(enrollment: EnrollmentProp):Promise<Buffer> {
         const {id, student_id, class_id, school_year_id, grade_level, status} = enrollment;
         try {
-            const query = `INSERT INTO enrollments(id, student_id, class_id, school_year_id, grade_level, status) VALUES(?,?,?,?,?,?)`;
-            const values = [id, student_id, class_id, school_year_id, grade_level, status];
+            const query = `INSERT INTO enrollments(id, student_id, class_id, school_year_id, grade_level, status, class_name_snapshot, section_snapshot, adviser_name_snapshot) VALUES(?,?,?,?,?,?,?,?,?)`;
+            const values = [
+                id, student_id, class_id, school_year_id, grade_level, status,
+                enrollment.class_name_snapshot ?? null,
+                enrollment.section_snapshot ?? null,
+                enrollment.adviser_name_snapshot ?? null,
+            ];
             await this.connection.execute<ResultSetHeader>(query, values);
             return id;
         } catch(err) {
@@ -17,14 +22,32 @@ export default class Enrollment {
         }
     }
 
-    async addEnrollmentSubjects(enrollmentId: Buffer, subjectIds: Buffer[]):Promise<void> {
-        if (subjectIds.length === 0) return;
+    async addEnrollmentSubjects(enrollmentId: Buffer, subjects: { id: Buffer; name: string }[]):Promise<void> {
+        if (subjects.length === 0) return;
         try {
-            const placeholders = subjectIds.map(() => `(?, ?)`).join(", ");
-            const values: Buffer[] = [];
-            subjectIds.forEach(sid => { values.push(enrollmentId, sid); });
-            const query = `INSERT INTO enrollment_subjects(enrollment_id, subject_id) VALUES ${placeholders}`;
+            const placeholders = subjects.map(() => `(?, ?, ?)`).join(", ");
+            const values: (Buffer | string | null)[] = [];
+            subjects.forEach(s => { values.push(enrollmentId, s.id, s.name); });
+            const query = `INSERT INTO enrollment_subjects(enrollment_id, subject_id, subject_name_snapshot) VALUES ${placeholders}`;
             await this.connection.execute<ResultSetHeader>(query, values);
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
+    async getSubjectNamesByIds(subjectIds: Buffer[]):Promise<Map<string, string>> {
+        const map = new Map<string, string>();
+        if (subjectIds.length === 0) return map;
+        try {
+            const placeholders = subjectIds.map(() => "?").join(", ");
+            const [rows] = await this.connection.execute<RowDataPacket[]>(
+                `SELECT id, name FROM subjects WHERE id IN (${placeholders})`,
+                subjectIds
+            );
+            for (const row of rows as {id: Buffer; name: string}[]) {
+                map.set(row.id.toString("hex"), row.name);
+            }
+            return map;
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
@@ -68,8 +91,9 @@ export default class Enrollment {
             const query = `
                 SELECT 
                     e.id, e.student_id, e.class_id, e.school_year_id, e.status, e.enrolled_at,
+                    e.class_name_snapshot, e.section_snapshot, e.adviser_name_snapshot,
                     c.class_name, c.section, e.grade_level, c.capacity,
-                    CONCAT(f.first_name, ' ', f.last_name) as adviser_name,
+                    COALESCE(e.adviser_name_snapshot, CONCAT(f.first_name, ' ', f.last_name)) as adviser_name,
                     sy.name as school_year_name,
                     CONCAT(sadmin.first_name, ' ', sadmin.last_name) as school_name
                 FROM enrollments e
@@ -92,14 +116,18 @@ export default class Enrollment {
             const query = `
                 SELECT 
                     e.id, e.student_id, e.class_id, e.school_year_id, e.status, e.enrolled_at,
-                    c.class_name, c.section, e.grade_level, c.capacity, c.schedule,
-                    CONCAT(f.first_name, ' ', f.last_name) as adviser_name,
+                    e.class_name_snapshot, e.section_snapshot, e.adviser_name_snapshot,
+                    COALESCE(e.class_name_snapshot, c.class_name) as class_name,
+                    COALESCE(e.section_snapshot, c.section) as section,
+                    e.grade_level, c.capacity, c.schedule,
+                    COALESCE(e.adviser_name_snapshot, CONCAT(f.first_name, ' ', f.last_name)) as adviser_name,
                     sy.name as school_year_name
                 FROM enrollments e
                 INNER JOIN classes c ON e.class_id = c.id
                 LEFT JOIN faculties f ON c.faculty_id = f.id
                 LEFT JOIN school_years sy ON e.school_year_id = sy.id
                 WHERE e.student_id = ? AND e.school_year_id = ?
+                ORDER BY FIELD(e.status, 'active', 'completed', 'transferred', 'dropped')
                 LIMIT 1
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [studentId, schoolYearId]);
@@ -112,15 +140,19 @@ export default class Enrollment {
     async getSubjectsByEnrollmentId(enrollmentId: Buffer):Promise<RowDataPacket[]> {
         try {
             const query = `
-                SELECT sub.id, sub.name,
+                SELECT sub.id,
+                    COALESCE(es.subject_name_snapshot, sub.name) as name,
                     CONCAT(f.first_name, ' ', f.last_name) as teacher_name
                 FROM enrollment_subjects es
                 INNER JOIN subjects sub ON es.subject_id = sub.id
                 LEFT JOIN class_faculties cf ON cf.subject_id = sub.id AND cf.class_id = (
                     SELECT e.class_id FROM enrollments e WHERE e.id = es.enrollment_id
+                ) AND cf.school_year_id = (
+                    SELECT e.school_year_id FROM enrollments e WHERE e.id = es.enrollment_id
                 )
                 LEFT JOIN faculties f ON cf.faculty_id = f.id
                 WHERE es.enrollment_id = ?
+                ORDER BY name
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [enrollmentId]);
             return row;
@@ -162,13 +194,11 @@ export default class Enrollment {
         }
     }
 
-    async updateEnrollmentStatus(id: Buffer, status: "active" | "dropped" | "completed"):Promise<void> {
+    async updateEnrollmentStatus(id: Buffer, status: "active" | "dropped" | "completed" | "transferred"):Promise<void> {
         try {
             const query = `UPDATE enrollments SET status = ? WHERE id = ?`;
             await this.connection.execute<ResultSetHeader>(query, [status, id]);
-            if (status === "dropped" || status === "completed") {
-                await this.deleteEnrollmentSubjects(id);
-            }
+            // Preserve enrollment_subjects for historical academic records on all status changes
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }

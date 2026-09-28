@@ -106,6 +106,12 @@ export const updateGradingWeightsService = async (
             throw new BadRequestError(`Grading weights must total exactly 100%. Current total: ${totalWeight}%`);
         }
 
+        const PeriodFinalizationsModel = (await import("../model/periodFinalizations.js")).default;
+        const hasFinalized = await new PeriodFinalizationsModel(connection).hasFinalizationsForClassSubject(classBuf, subjectBuf);
+        if (hasFinalized) {
+            throw new BadRequestError("Cannot change grading weights: finalized grades exist for this class and subject");
+        }
+
         await model.upsertGradingWeights(classBuf, subjectBuf, processedWeights);
         return { message: "Grading weights updated successfully" };
     } finally {
@@ -192,6 +198,13 @@ export const createGradeItemService = async (
         // Academic period is required and must belong to the class's school
         const periodIdNum = await validateGradeItemPeriod(connection, classBuf, periodId);
 
+        const PeriodFinalizationsModel = (await import("../model/periodFinalizations.js")).default;
+        const finalized = await new PeriodFinalizationsModel(connection)
+            .hasFinalizationForPeriod(periodIdNum, classBuf, subjectBuf);
+        if (finalized) {
+            throw new BadRequestError("Cannot add grade items: this academic period is finalized");
+        }
+
         const id = await model.createGradeItem(classBuf, subjectBuf, facultyBuf, category as GradeItemCategory, title.trim(), maxScore, dueDate, periodIdNum);
         return { id: bufferToUUID(id), message: "Grade item created successfully" };
     } finally {
@@ -251,6 +264,15 @@ export const updateGradeItemService = async (
             throw new BadRequestError("Academic period cannot be changed during editing");
         }
 
+        if (periodIdNum) {
+            const PeriodFinalizationsModel = (await import("../model/periodFinalizations.js")).default;
+            const finalized = await new PeriodFinalizationsModel(connection)
+                .hasFinalizationForPeriod(periodIdNum, item.class_id, item.subject_id);
+            if (finalized) {
+                throw new BadRequestError("Cannot edit grade items: this academic period is finalized");
+            }
+        }
+
         await model.updateGradeItem(itemBuf, title.trim(), category as GradeItemCategory, maxScore, dueDate, periodIdNum);
         return { message: "Grade item updated successfully" };
     } finally {
@@ -270,6 +292,16 @@ export const deleteGradeItemService = async (itemId: string, facultyId: string) 
         const owned = await model.isGradeItemOwnedByFaculty(itemBuf, facultyBuf);
         if (!owned) {
             throw new ForbiddenError("You do not have permission to delete this grade item");
+        }
+
+        const item = await model.getGradeItemById(itemBuf);
+        if (item && item.period_id !== null && item.period_id !== undefined) {
+            const PeriodFinalizationsModel = (await import("../model/periodFinalizations.js")).default;
+            const finalized = await new PeriodFinalizationsModel(connection)
+                .hasFinalizationForPeriod(Number(item.period_id), item.class_id, item.subject_id);
+            if (finalized) {
+                throw new BadRequestError("Cannot delete grade items: this academic period is finalized");
+            }
         }
 
         await model.deleteGradeItem(itemBuf);
@@ -473,6 +505,15 @@ export const upsertGradesService = async (
             });
         }
 
+        if (item.period_id !== null && item.period_id !== undefined) {
+            const PeriodFinalizationsModel = (await import("../model/periodFinalizations.js")).default;
+            const finalized = await new PeriodFinalizationsModel(connection)
+                .hasFinalizationForPeriod(Number(item.period_id), item.class_id, item.subject_id);
+            if (finalized) {
+                throw new BadRequestError("Cannot edit scores: this academic period is finalized");
+            }
+        }
+
         await model.upsertGrades(itemBuf, processedGrades, recordedByBuf);
         return { message: "Grades saved successfully" };
     } finally {
@@ -595,12 +636,171 @@ export const getStudentGradesForSubjectService = async (
 
 import type { RowDataPacket } from "mysql2/promise";
 
+type SubjectSummarySubject = {
+    class_id: string;
+    class_name: string;
+    section: string | null;
+    grade_level: number | null;
+    subject_id: string;
+    subject_name: string;
+};
+
+async function computeSubjectSummary(
+    connection: PoolConnection,
+    studentBuf: Buffer,
+    subj: SubjectSummarySubject,
+    periodId?: number
+) {
+    const model = new GradebookModel(connection);
+    const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
+    const classBuf = UUIDToBuffer(subj.class_id);
+    const subjectBuf = UUIDToBuffer(subj.subject_id);
+
+    const items = await model.getGradeItems(classBuf, subjectBuf, undefined, periodId);
+    const { scores } = await model.getStudentGradesForSubject(studentBuf, classBuf, subjectBuf, periodId);
+    const scoreMap = new Map<string, number>();
+    for (const s of scores) {
+        scoreMap.set(bufferToUUID(s.grade_item_id), Number(s.score));
+    }
+
+    const weights = await model.getGradingWeights(classBuf, subjectBuf);
+    const weightMap = new Map<string, number>();
+    for (const w of weights) {
+        weightMap.set(w.category, Number(w.weight));
+    }
+
+    const attendanceRate = await model.getAttendanceRate(studentBuf, classBuf, subjectBuf, periodId);
+    const hasAttendance = await model.hasAttendanceRecords(studentBuf, classBuf, subjectBuf, periodId);
+    const teacherName = await model.getSubjectTeacher(classBuf, subjectBuf);
+
+    const categories = ["activities", "quizzes", "exams"] as const;
+    const categoryData: Record<(typeof categories)[number], { items: { id: string; title: string; score: number | null; max_score: number; due_date: string | null }[]; average: number | null }> = {
+        activities: { items: [], average: null },
+        quizzes: { items: [], average: null },
+        exams: { items: [], average: null },
+    };
+    for (const cat of categories) {
+        const catItems = items.filter(i => i.category === cat);
+        let sum = 0, max = 0, hasAny = false;
+        const itemList = catItems.map(i => {
+            const iid = bufferToUUID(i.id);
+            const score = scoreMap.get(iid) ?? null;
+            if (score !== null) { sum += score; hasAny = true; }
+            max += Number(i.max_score);
+            return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: i.due_date };
+        });
+        categoryData[cat] = {
+            items: itemList,
+            average: hasAny && max > 0 ? Math.round((sum / max) * 10000) / 100 : null,
+        };
+    }
+
+    const categoryAverages = new Map<string, number | null>([
+        ["activities", categoryData.activities.average],
+        ["quizzes", categoryData.quizzes.average],
+        ["exams", categoryData.exams.average],
+    ]);
+
+    const finalGrade = computeNormalizedFinalGrade(
+        categoryAverages,
+        attendanceRate,
+        hasAttendance,
+        weightMap
+    );
+
+    return {
+        subject_id: subj.subject_id,
+        subject_name: subj.subject_name,
+        class_id: subj.class_id,
+        class_name: subj.class_name,
+        section: subj.section,
+        grade_level: subj.grade_level,
+        teacher_name: teacherName || "",
+        activities: categoryData.activities,
+        quizzes: categoryData.quizzes,
+        exams: categoryData.exams,
+        attendance_rate: attendanceRate,
+        grading_weights: weights.map(w => ({ category: w.category, weight: Number(w.weight) })),
+        final_grade: finalGrade,
+    };
+}
+
+async function collectEnrollmentSubjects(
+    connection: PoolConnection,
+    studentBuf: Buffer,
+    schoolYearId: number,
+    options: { requireActive?: boolean } = {}
+): Promise<SubjectSummarySubject[]> {
+    let enrollQuery = `
+        SELECT e.id as enrollment_id, e.class_id, c.class_name, c.section, c.grade_level,
+               es.subject_id, COALESCE(es.subject_name_snapshot, s.name) as subject_name
+        FROM enrollments e
+        INNER JOIN classes c ON c.id = e.class_id
+        INNER JOIN enrollment_subjects es ON es.enrollment_id = e.id
+        LEFT JOIN subjects s ON s.id = es.subject_id
+        WHERE e.student_id = ? AND e.school_year_id = ?
+    `;
+    const enrollParams: (Buffer | number)[] = [studentBuf, schoolYearId];
+    if (options.requireActive) {
+        enrollQuery += ` AND e.status = 'active'`;
+    }
+    enrollQuery += ` ORDER BY c.class_name, subject_name`;
+
+    const [enrollRows] = await connection.execute<RowDataPacket[]>(enrollQuery, enrollParams);
+
+    const subjectMap = new Map<string, SubjectSummarySubject>();
+    for (const row of enrollRows as any[]) {
+        const key = `${bufferToUUID(row.class_id)}-${bufferToUUID(row.subject_id)}`;
+        if (!subjectMap.has(key)) {
+            subjectMap.set(key, {
+                class_id: bufferToUUID(row.class_id),
+                class_name: row.class_name,
+                section: row.section,
+                grade_level: row.grade_level,
+                subject_id: bufferToUUID(row.subject_id),
+                subject_name: row.subject_name,
+            });
+        }
+    }
+    return Array.from(subjectMap.values());
+}
+
+export const getStudentSummaryForYear = async (
+    studentId: string,
+    schoolId: number,
+    schoolYearId: number,
+    periodId?: number
+) => {
+    const pool = databasePool();
+    const connection = await pool.getConnection();
+    try {
+        const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
+        const studentBuf = UUIDToBuffer(studentId);
+
+        const SchoolYearModel = (await import("../model/school-years.js")).default;
+        const schoolYear = await new SchoolYearModel(connection).getById(schoolYearId);
+        if (!schoolYear || schoolYear.school_id !== schoolId) {
+            throw new BadRequestError("School year not found for this school");
+        }
+
+        const subjects = await collectEnrollmentSubjects(connection, studentBuf, schoolYearId);
+
+        const results = [];
+        for (const subj of subjects) {
+            const summary = await computeSubjectSummary(connection, studentBuf, subj, periodId);
+            results.push(summary);
+        }
+        return results;
+    } finally {
+        connection.release();
+    }
+};
+
 export const getStudentSummaryService = async (studentId: string, schoolId: number, periodId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
-        const model = new GradebookModel(connection);
         const studentBuf = UUIDToBuffer(studentId);
 
         const { getCurrentSchoolYearService } = await import("./school-years.js");
@@ -609,109 +809,12 @@ export const getStudentSummaryService = async (studentId: string, schoolId: numb
             throw new BadRequestError("No current school year is set");
         }
 
-        // Get enrolled classes with subjects
-        const enrollQuery = `
-            SELECT e.id as enrollment_id, e.class_id, c.class_name, c.section, c.grade_level,
-                   es.subject_id, s.name as subject_name
-            FROM enrollments e
-            INNER JOIN classes c ON c.id = e.class_id
-            INNER JOIN enrollment_subjects es ON es.enrollment_id = e.id
-            INNER JOIN subjects s ON s.id = es.subject_id
-            WHERE e.student_id = ? AND e.school_year_id = ? AND e.status = 'active'
-            ORDER BY c.class_name, s.name
-        `;
-        const [enrollRows] = await connection.execute<RowDataPacket[]>(enrollQuery, [studentBuf, currentSy.id]);
-
-        // Group by class+subject
-        const subjectMap = new Map<string, { class_id: string; class_name: string; section: string | null; grade_level: number | null; subject_id: string; subject_name: string }>();
-        for (const row of enrollRows as any[]) {
-            const key = `${bufferToUUID(row.class_id)}-${bufferToUUID(row.subject_id)}`;
-            if (!subjectMap.has(key)) {
-                subjectMap.set(key, {
-                    class_id: bufferToUUID(row.class_id),
-                    class_name: row.class_name,
-                    section: row.section,
-                    grade_level: row.grade_level,
-                    subject_id: bufferToUUID(row.subject_id),
-                    subject_name: row.subject_name,
-                });
-            }
-        }
+        const subjects = await collectEnrollmentSubjects(connection, studentBuf, currentSy.id, { requireActive: true });
 
         const results = [];
-        for (const [, subj] of subjectMap) {
-            const classBuf = UUIDToBuffer(subj.class_id);
-            const subjectBuf = UUIDToBuffer(subj.subject_id);
-
-            const items = await model.getGradeItems(classBuf, subjectBuf, undefined, periodId);
-            const { items: studentItems, scores } = await model.getStudentGradesForSubject(studentBuf, classBuf, subjectBuf, periodId);
-            const scoreMap = new Map<string, number>();
-            for (const s of scores) {
-                scoreMap.set(bufferToUUID(s.grade_item_id), Number(s.score));
-            }
-
-            const weights = await model.getGradingWeights(classBuf, subjectBuf);
-            const weightMap = new Map<string, number>();
-            for (const w of weights) {
-                weightMap.set(w.category, Number(w.weight));
-            }
-
-            const attendanceRate = await model.getAttendanceRate(studentBuf, classBuf, subjectBuf, periodId);
-            const hasAttendance = await model.hasAttendanceRecords(studentBuf, classBuf, subjectBuf, periodId);
-            const teacherName = await model.getSubjectTeacher(classBuf, subjectBuf);
-
-            // Compute averages
-            const categories = ["activities", "quizzes", "exams"] as const;
-            const categoryData: { activities: { items: { id: string; title: string; score: number | null; max_score: number; due_date: string | null }[]; average: number | null }; quizzes: { items: { id: string; title: string; score: number | null; max_score: number; due_date: string | null }[]; average: number | null }; exams: { items: { id: string; title: string; score: number | null; max_score: number; due_date: string | null }[]; average: number | null } } = {
-                activities: { items: [], average: null },
-                quizzes: { items: [], average: null },
-                exams: { items: [], average: null },
-            };
-            for (const cat of categories) {
-                const catItems = items.filter(i => i.category === cat);
-                let sum = 0, max = 0, hasAny = false;
-                const itemList = catItems.map(i => {
-                    const iid = bufferToUUID(i.id);
-                    const score = scoreMap.get(iid) ?? null;
-                    if (score !== null) { sum += score; hasAny = true; }
-                    max += Number(i.max_score);
-                    return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: i.due_date };
-                });
-                categoryData[cat] = {
-                    items: itemList,
-                    average: hasAny && max > 0 ? Math.round((sum / max) * 10000) / 100 : null,
-                };
-            }
-
-            // Compute final grade using normalized weights
-            const categoryAverages = new Map<string, number | null>([
-                ["activities", categoryData.activities.average],
-                ["quizzes", categoryData.quizzes.average],
-                ["exams", categoryData.exams.average],
-            ]);
-
-            const finalGrade = computeNormalizedFinalGrade(
-                categoryAverages,
-                attendanceRate,
-                hasAttendance,
-                weightMap
-            );
-
-            results.push({
-                subject_id: subj.subject_id,
-                subject_name: subj.subject_name,
-                class_id: subj.class_id,
-                class_name: subj.class_name,
-                section: subj.section,
-                grade_level: subj.grade_level,
-                teacher_name: teacherName || "",
-                activities: categoryData.activities,
-                quizzes: categoryData.quizzes,
-                exams: categoryData.exams,
-                attendance_rate: attendanceRate,
-                grading_weights: weights.map(w => ({ category: w.category, weight: Number(w.weight) })),
-                final_grade: finalGrade,
-            });
+        for (const subj of subjects) {
+            const summary = await computeSubjectSummary(connection, studentBuf, subj, periodId);
+            results.push(summary);
         }
 
         return results;

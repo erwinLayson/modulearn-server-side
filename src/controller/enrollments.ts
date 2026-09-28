@@ -94,7 +94,7 @@ export const getClassesByStudentId = async (
 };
 
 export const updateEnrollmentStatus = async (
-    req: Request<{id: string}, {}, {status: "active" | "dropped" | "completed"}>,
+    req: Request<{id: string}, {}, {status: "active" | "dropped" | "completed" | "transferred"}>,
     res: Response,
     next: NextFunction
 ) => {

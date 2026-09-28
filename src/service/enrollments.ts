@@ -66,13 +66,23 @@ export const enrollStudentService = async (enrollment: EnrollmentProp, subjectId
             }
         }
 
+        // 7. Snapshot class/section/adviser at enrollment time for historical records
+        enrollment.class_name_snapshot = classData.class_name;
+        enrollment.section_snapshot = classData.section;
+        enrollment.adviser_name_snapshot = classData.faculty_name ?? null;
+
         // 7. Create enrollment
         await enrollmentModel.enrollStudent(enrollment);
 
-        // 8. Add subjects
+        // 8. Add subjects with name snapshots
         if (subjectIds.length > 0) {
             const subjectBuffers = subjectIds.map(sid => UUIDToBuffer(sid));
-            await enrollmentModel.addEnrollmentSubjects(enrollment.id, subjectBuffers);
+            const nameMap = await enrollmentModel.getSubjectNamesByIds(subjectBuffers);
+            const subjects = subjectBuffers.map(buf => ({
+                id: buf,
+                name: nameMap.get(buf.toString("hex")) ?? "",
+            }));
+            await enrollmentModel.addEnrollmentSubjects(enrollment.id, subjects);
         }
 
         return enrollment.id;
@@ -228,7 +238,7 @@ export const getClassesByStudentIdService = async (studentId: string) => {
     }
 };
 
-export const updateEnrollmentStatusService = async (id: string, status: "active" | "dropped" | "completed") => {
+export const updateEnrollmentStatusService = async (id: string, status: "active" | "dropped" | "completed" | "transferred") => {
     const pool = databasePool();
     const connection = await pool.getConnection();
 

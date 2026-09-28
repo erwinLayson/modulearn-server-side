@@ -5,6 +5,7 @@ export interface SubjectProp {
     description: string | null;
     school_id: number;
     admin_id: Buffer;
+    is_active?: number;
     created_at: Date;
     updated_at: Date | null;
 }

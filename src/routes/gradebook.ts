@@ -10,6 +10,8 @@ import {
     upsertGrades,
     getStudentGradesForSubject,
     getStudentSummary,
+    finalizePeriod,
+    correctFinalization,
 } from "../controller/gradebook.js";
 import { authMiddleware, roleMiddleware } from "../middleware/auth.js";
 
@@ -28,6 +30,10 @@ router.delete("/gradebook/items/:id", authMiddleware, roleMiddleware("faculty"),
 // Grades (Faculty)
 router.get("/gradebook/grades/:classId/:subjectId", authMiddleware, roleMiddleware("faculty"), getGradesForSubject);
 router.post("/gradebook/grades/:gradeItemId", authMiddleware, roleMiddleware("faculty"), upsertGrades);
+
+// Finalization
+router.post("/gradebook/finalize", authMiddleware, roleMiddleware("faculty", "school_admin"), finalizePeriod);
+router.put("/gradebook/finalizations/:id", authMiddleware, roleMiddleware("school_admin"), correctFinalization);
 
 // Student Grade APIs
 router.get("/gradebook/student/:classId/:subjectId", authMiddleware, roleMiddleware("student"), getStudentGradesForSubject);

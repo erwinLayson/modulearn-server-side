@@ -10,6 +10,7 @@ export interface FacultyProp {
     contact_number: string;
     admin_id: Buffer;
     faculty_role: FacultyRole;
+    is_active?: number;
 }
 
 export interface FacultyLoginProp {

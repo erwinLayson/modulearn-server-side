@@ -5,6 +5,7 @@ import type { MulterRequest } from "../middleware/upload.js";
 import type { TokenPayload } from "../helper/jwt.js";
 
 import { registerStudentService, getStudentsBySchoolIdService, getStudentByIdService, updateStudentService, deleteStudentService, importStudentsService, previewImportStudentsService } from "../service/students.js";
+import { getStudentAcademicRecordService } from "../service/academicRecord.js";
 import {BadRequestError} from "../helper/error.js";
 
 // ====================== Helper ======================
@@ -176,6 +177,24 @@ export const deleteStudent = async (
     try {
         await deleteStudentService(id);
         sendSuccess(res, "Student deleted successfully");
+    } catch(err) {
+        next(err);
+    }
+};
+
+export const getStudentAcademicRecord = async (
+    req: Request<{id: string}, {}, {}, {scope?: string}> & { user?: TokenPayload },
+    res: Response,
+    next: NextFunction
+) => {
+    const {id} = req.params;
+    const scopeRaw = req.query.scope;
+    const scope = scopeRaw === "all" ? "all" : "current";
+    const schoolId = req.user!.school_id!;
+
+    try {
+        const result = await getStudentAcademicRecordService(id, schoolId, scope);
+        sendSuccess(res, "Academic record retrieved", result);
     } catch(err) {
         next(err);
     }

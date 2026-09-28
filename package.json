@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "migrate": "tsx src/migration.ts",
+    "seed:students": "tsx src/seeders/001_seed_students_and_records.ts",
     "start": "node ./dist/server.js",
     "dev": "tsx watch src/server.ts"
   },

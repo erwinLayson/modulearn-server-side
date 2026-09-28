@@ -87,18 +87,16 @@ export const getClassSessions = async (
             }
 
             const sessions = await attendanceModel.getSessionsByClass(classBuf, periodId);
-            sendSuccess(res, "Sessions retrieved", {
-                data: sessions.map(s => ({
-                    id: s.id,
-                    class_id: bufferToUUID(s.class_id),
-                    subject_id: bufferToUUID(s.subject_id),
-                    attendance_date: s.attendance_date,
-                    period_id: s.period_id,
-                    period_name: s.period_name,
-                    created_by: bufferToUUID(s.created_by),
-                    created_at: s.created_at,
-                })),
-            });
+            sendSuccess(res, "Sessions retrieved", sessions.map(s => ({
+                id: s.id,
+                class_id: bufferToUUID(s.class_id),
+                subject_id: bufferToUUID(s.subject_id),
+                attendance_date: s.attendance_date,
+                period_id: s.period_id,
+                period_name: s.period_name,
+                created_by: bufferToUUID(s.created_by),
+                created_at: s.created_at,
+            })));
         } finally {
             connection.release();
         }

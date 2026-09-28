@@ -1,6 +1,7 @@
 import type{Request, Response, NextFunction} from "express";
 import {databasePool} from "../config/database.js";
 import {ForbiddenError} from "../helper/error.js";
+import {UUIDToBuffer} from "../helper/UUIDToBuffer.js";
 import type{TokenPayload} from "../helper/jwt.js";
 import type{UserRole} from "../constant/users.js";
 
@@ -62,6 +63,60 @@ export const enforceSchoolParam = (
     }
 
     next();
+};
+
+/**
+ * For student-scoped GET endpoints by :id param.
+ * Faculty may only proceed when they are the adviser of a class the student is
+ * enrolled in (an advisory relationship, not merely teaching a subject there).
+ * super_admin and school_admin pass through — their scope is enforced by
+ * verifyOwnership and the school scope on the token.
+ */
+export const verifyAdviserOfStudent = async (
+    req: Request<{id: string}>,
+    _res: Response,
+    next: NextFunction
+) => {
+    const user = getUser(req);
+    if (!user) {
+        return next(new ForbiddenError("Not authenticated"));
+    }
+
+    if (user.role === "super_admin" || user.role === "school_admin") {
+        return next();
+    }
+
+    if (user.role !== "faculty") {
+        return next(new ForbiddenError("Insufficient permissions"));
+    }
+
+    if (user.school_id === undefined) {
+        return next(new ForbiddenError("School ID not found in token"));
+    }
+
+    const {id} = req.params;
+    if (!id) {
+        return next(new ForbiddenError("Resource not found"));
+    }
+
+    try {
+        const pool = databasePool();
+        const [rows] = await pool.execute(
+            `SELECT 1 FROM enrollments e
+             INNER JOIN classes c ON c.id = e.class_id
+             WHERE e.student_id = ? AND c.school_id = ? AND c.faculty_id = ?
+             LIMIT 1`,
+            [UUIDToBuffer(id), user.school_id, UUIDToBuffer(user.id)]
+        );
+
+        if ((rows as unknown[]).length === 0) {
+            return next(new ForbiddenError("Access denied: you are not the adviser of this student"));
+        }
+
+        next();
+    } catch(err) {
+        next(err);
+    }
 };
 
 /**

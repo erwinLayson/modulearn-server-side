@@ -2,7 +2,9 @@ import type{Request, Response, NextFunction} from "express";
 
 import type{UserProp} from "../constant/users.js";
 
-import { getAllUsersService, getUserByIdService, createUserService, updateUserService, deleteUserService } from "../service/users.js";
+import type{TokenPayload} from "../helper/jwt.js";
+
+import { getAllUsersService, getUserByIdService, createUserService, updateUserService, updateUserPasswordService, deleteUserService } from "../service/users.js";
 import {BadRequestError} from "../helper/error.js";
 
 import {CheckData} from "../helper/checkdata.js";
@@ -75,6 +77,24 @@ export const updateUser = async (
     try {
         await updateUserService(id, data);
         sendSuccess(res, "User updated successfully");
+    } catch(err) {
+        next(err);
+    }
+};
+
+export const updateUserPassword = async (
+    req: Request<{id: string}, {}, { new_password: string }> & { user?: TokenPayload },
+    res: Response,
+    next: NextFunction
+) => {
+    const {id} = req.params;
+    const { new_password } = req.body;
+
+    CheckData({ new_password });
+
+    try {
+        await updateUserPasswordService(req.user!.id, id, new_password);
+        sendSuccess(res, "Password updated successfully");
     } catch(err) {
         next(err);
     }

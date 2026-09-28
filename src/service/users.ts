@@ -2,6 +2,7 @@ import {databasePool} from "../config/database.js";
 import UserModel from "../model/users.js";
 import {NotFoundError, BadRequestError} from "../helper/error.js";
 import type{UserProp} from "../constant/users.js";
+import { MIN_PASSWORD_LENGTH } from "../constant/users.js";
 import { bufferToUUID } from "../helper/bufferToUUID.js";
 import { generateRandomUUID } from "../helper/generateRandomId.js";
 import { hashPassword } from "../helper/hashPassword.js";
@@ -91,6 +92,33 @@ export const updateUserService = async (id: string, data: Partial<Pick<UserProp,
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
         const userModel = new UserModel(connection);
         await userModel.updateUser(UUIDToBuffer(id), data);
+    } finally {
+        connection.release();
+    }
+};
+
+export const updateUserPasswordService = async (actorId: string, targetId: string, newPassword: string) => {
+    if (actorId === targetId) {
+        throw new BadRequestError("Use your account settings to change your own password");
+    }
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+        throw new BadRequestError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    }
+
+    const pool = databasePool();
+    const connection = await pool.getConnection();
+
+    try {
+        const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
+        const userModel = new UserModel(connection);
+
+        const user = await userModel.getUserById(UUIDToBuffer(targetId));
+        if (user === null) {
+            throw new NotFoundError("User not found", 404);
+        }
+
+        const password = await hashPassword(newPassword);
+        await userModel.updateCredentials(UUIDToBuffer(targetId), { password });
     } finally {
         connection.release();
     }

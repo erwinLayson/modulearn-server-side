@@ -88,19 +88,20 @@ export default class Enrollment {
 
     async getEnrollmentsByStudentId(studentId: Buffer):Promise<RowDataPacket[]> {
         try {
+            // Snapshots win over the live class row so historical enrollments keep the
+            // name/section/adviser they had at enrollment time.
             const query = `
                 SELECT 
                     e.id, e.student_id, e.class_id, e.school_year_id, e.status, e.enrolled_at,
-                    e.class_name_snapshot, e.section_snapshot, e.adviser_name_snapshot,
-                    c.class_name, c.section, e.grade_level, c.capacity,
+                    COALESCE(e.class_name_snapshot, c.class_name) as class_name,
+                    COALESCE(e.section_snapshot, c.section) as section,
+                    e.grade_level, c.capacity,
                     COALESCE(e.adviser_name_snapshot, CONCAT(f.first_name, ' ', f.last_name)) as adviser_name,
-                    sy.name as school_year_name,
-                    CONCAT(sadmin.first_name, ' ', sadmin.last_name) as school_name
+                    sy.name as school_year_name
                 FROM enrollments e
                 INNER JOIN classes c ON e.class_id = c.id
                 LEFT JOIN faculties f ON c.faculty_id = f.id
                 LEFT JOIN school_years sy ON e.school_year_id = sy.id
-                LEFT JOIN schools sadmin ON c.school_id = sadmin.school_id
                 WHERE e.student_id = ?
                 ORDER BY e.enrolled_at DESC
             `;

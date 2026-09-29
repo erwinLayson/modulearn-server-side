@@ -1,4 +1,4 @@
 allowBuilds:
-  bcrypt: false
-  esbuild: false
-  puppeteer: false
+  bcrypt: true
+  esbuild: true
+  puppeteer: true

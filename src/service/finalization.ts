@@ -135,6 +135,57 @@ export const finalizePeriodGradesService = async (
     }
 };
 
+export const listFinalizationsService = async (
+    classId: string,
+    subjectId: string,
+    facultyId: string,
+    schoolId: number | undefined,
+    role: string
+) => {
+    const pool = databasePool();
+    const connection = await pool.getConnection();
+    try {
+        const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
+        const classBuf = UUIDToBuffer(classId);
+        const subjectBuf = UUIDToBuffer(subjectId);
+
+        const classInfo = await new ClassModel(connection).getClassById(classBuf);
+        if (!classInfo) {
+            throw new NotFoundError("Class not found", 404);
+        }
+
+        if (role === "faculty") {
+            const assigned = await new GradebookModel(connection).isTeacherAssignedToClassSubject(
+                UUIDToBuffer(facultyId), classBuf, subjectBuf
+            );
+            if (!assigned) {
+                throw new ForbiddenError("You are not assigned to teach this subject in this class");
+            }
+        } else if (role === "school_admin") {
+            if (schoolId === undefined || classInfo.school_id !== schoolId) {
+                throw new ForbiddenError("You do not have access to this class");
+            }
+        } else {
+            throw new ForbiddenError("Insufficient permissions");
+        }
+
+        const rows = await new PeriodFinalizationsModel(connection).getByClassSubjectWithStudent(classBuf, subjectBuf);
+        return rows.map(r => ({
+            id: r.id,
+            period_id: r.period_id === null ? null : Number(r.period_id),
+            student_id: bufferToUUID(r.student_id),
+            student_name: r.student_name,
+            student_lrn: r.student_lrn,
+            final_grade: r.final_grade === null ? null : Number(r.final_grade),
+            finalized_at: r.finalized_at,
+            updated_at: r.updated_at,
+            correction_reason: r.correction_reason,
+        }));
+    } finally {
+        connection.release();
+    }
+};
+
 export const correctFinalizationService = async (
     finalizationId: number,
     finalGrade: number | null,

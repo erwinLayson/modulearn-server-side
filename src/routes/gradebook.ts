@@ -11,6 +11,7 @@ import {
     getStudentGradesForSubject,
     getStudentSummary,
     finalizePeriod,
+    listFinalizations,
     correctFinalization,
 } from "../controller/gradebook.js";
 import { authMiddleware, roleMiddleware } from "../middleware/auth.js";
@@ -36,6 +37,7 @@ router.get("/gradebook/grades/:classId/:subjectId", authMiddleware, roleMiddlewa
 router.post("/gradebook/grades/:gradeItemId", authMiddleware, roleMiddleware("faculty"), gradebookOn, upsertGrades);
 
 // Finalization
+router.get("/gradebook/finalizations", authMiddleware, roleMiddleware("faculty", "school_admin"), gradebookOn, listFinalizations);
 router.post("/gradebook/finalize", authMiddleware, roleMiddleware("faculty", "school_admin"), gradebookOn, finalizePeriod);
 router.put("/gradebook/finalizations/:id", authMiddleware, roleMiddleware("school_admin"), gradebookOn, correctFinalization);
 

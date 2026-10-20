@@ -12,7 +12,7 @@ import {
     getStudentGradesForSubjectService,
     getStudentSummaryService,
 } from "../service/gradebook.js";
-import { finalizePeriodGradesService, correctFinalizationService } from "../service/finalization.js";
+import { finalizePeriodGradesService, correctFinalizationService, listFinalizationsService } from "../service/finalization.js";
 import { sendSuccess } from "../helper/sendSuccess.js";
 import { BadRequestError } from "../helper/error.js";
 
@@ -205,6 +205,30 @@ export const finalizePeriod = async (
             req.user!.role
         );
         sendSuccess(res, result.message, result);
+    } catch (err) {
+        next(err);
+    }
+};
+
+export const listFinalizations = async (
+    req: Request<{}, {}, {}, { class_id?: string; subject_id?: string }> & { user?: TokenPayload },
+    res: Response,
+    next: NextFunction
+) => {
+    const classId = typeof req.query.class_id === "string" ? req.query.class_id : "";
+    const subjectId = typeof req.query.subject_id === "string" ? req.query.subject_id : "";
+    try {
+        if (!classId || !subjectId) {
+            throw new BadRequestError("class_id and subject_id are required");
+        }
+        const result = await listFinalizationsService(
+            classId,
+            subjectId,
+            req.user!.id,
+            req.user!.school_id,
+            req.user!.role
+        );
+        sendSuccess(res, "Finalizations retrieved", result);
     } catch (err) {
         next(err);
     }

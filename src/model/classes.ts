@@ -211,8 +211,8 @@ export default class Class {
 
     async replaceFaculty(classId: Buffer, oldFacultyId: Buffer, newFacultyId: Buffer, subjectId: Buffer, schoolYearId: number):Promise<void> {
         try {
-            const query = `DELETE FROM class_faculties WHERE class_id = ? AND faculty_id = ?`;
-            await this.connection.execute<ResultSetHeader>(query, [classId, oldFacultyId]);
+            const query = `DELETE FROM class_faculties WHERE class_id = ? AND faculty_id = ? AND subject_id = ? AND school_year_id = ?`;
+            await this.connection.execute<ResultSetHeader>(query, [classId, oldFacultyId, subjectId, schoolYearId]);
             const insertQuery = `INSERT INTO class_faculties(class_id, faculty_id, subject_id, school_year_id) VALUES(?,?,?,?)`;
             await this.connection.execute<ResultSetHeader>(insertQuery, [classId, newFacultyId, subjectId, schoolYearId]);
         } catch(err) {

@@ -17,6 +17,11 @@ export interface FinalizationRow {
     correction_reason: string | null;
 }
 
+export interface FinalizationWithStudentRow extends FinalizationRow {
+    student_name: string;
+    student_lrn: string | null;
+}
+
 export default class PeriodFinalizations {
     constructor(private connection: PoolConnection) {}
 
@@ -53,6 +58,29 @@ export default class PeriodFinalizations {
             `;
             const [rows] = await this.connection.execute<RowDataPacket[]>(query, [periodId, classId, subjectId]);
             return rows as FinalizationRow[];
+        } catch (err) {
+            throw new InternalServerError("Error fetching period finalizations", 500, err);
+        }
+    }
+
+    async getByClassSubjectWithStudent(
+        classId: Buffer,
+        subjectId: Buffer
+    ): Promise<FinalizationWithStudentRow[]> {
+        try {
+            const query = `
+                SELECT pf.id, pf.school_id, pf.school_year_id, pf.period_id, pf.class_id, pf.subject_id,
+                       pf.student_id, pf.final_grade, pf.finalized_by, pf.finalized_at,
+                       pf.updated_by, pf.updated_at, pf.correction_reason,
+                       CONCAT(st.first_name, ' ', st.last_name) as student_name,
+                       st.lrn as student_lrn
+                FROM period_finalizations pf
+                JOIN students st ON st.id = pf.student_id
+                WHERE pf.class_id = ? AND pf.subject_id = ?
+                ORDER BY st.last_name, st.first_name, pf.period_id
+            `;
+            const [rows] = await this.connection.execute<RowDataPacket[]>(query, [classId, subjectId]);
+            return rows as FinalizationWithStudentRow[];
         } catch (err) {
             throw new InternalServerError("Error fetching period finalizations", 500, err);
         }

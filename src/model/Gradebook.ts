@@ -120,7 +120,7 @@ export default class Gradebook {
 
     // --- Grade Items ---
 
-    async getGradeItems(classId: Buffer, subjectId: Buffer, category?: GradeItemCategory, periodId?: number): Promise<GradeItemRow[]> {
+    async getGradeItems(classId: Buffer, subjectId: Buffer, category?: GradeItemCategory, periodId?: number, facultyId?: Buffer): Promise<GradeItemRow[]> {
         try {
             let query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id, created_at FROM grade_items WHERE class_id = ? AND subject_id = ?`;
             const params: (Buffer | GradeItemCategory | number)[] = [classId, subjectId];
@@ -131,6 +131,10 @@ export default class Gradebook {
             if (periodId !== undefined) {
                 query += ` AND period_id = ?`;
                 params.push(periodId);
+            }
+            if (facultyId) {
+                query += ` AND faculty_id = ?`;
+                params.push(facultyId);
             }
             query += ` ORDER BY created_at DESC`;
             const [rows] = await this.connection.execute<RowDataPacket[]>(query, params);

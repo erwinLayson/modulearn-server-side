@@ -58,8 +58,9 @@ export const getGradeItems = async (
     const { classId, subjectId } = req.params;
     const category = typeof req.query.category === "string" ? req.query.category : undefined;
     const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
+    const facultyId = req.user?.role === "faculty" ? req.user.id : undefined;
     try {
-        const result = await getGradeItemsService(classId, subjectId, category, periodId);
+        const result = await getGradeItemsService(classId, subjectId, category, periodId, facultyId);
         sendSuccess(res, "Grade items retrieved", result);
     } catch (err) {
         next(err);

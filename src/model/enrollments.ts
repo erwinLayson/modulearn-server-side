@@ -67,6 +67,7 @@ export default class Enrollment {
             const query = `
                 SELECT 
                     e.id, e.student_id, e.class_id, e.school_year_id, e.status, e.enrolled_at,
+                    s.first_name, s.middle_name, s.last_name,
                     CONCAT(s.first_name, ' ', s.last_name) as student_name,
                     s.email as student_email,
                     s.lrn,
@@ -77,7 +78,7 @@ export default class Enrollment {
                 INNER JOIN classes c ON e.class_id = c.id
                 LEFT JOIN school_years sy ON e.school_year_id = sy.id
                 WHERE e.class_id = ? AND e.school_year_id = ?
-                ORDER BY e.enrolled_at DESC
+                ORDER BY s.last_name ASC, s.first_name ASC, s.middle_name ASC
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [classId, schoolYearId]);
             return row;

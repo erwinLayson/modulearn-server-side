@@ -121,7 +121,7 @@ export const updateGradingWeightsService = async (
 
 // --- Grade Items ---
 
-export const getGradeItemsService = async (classId: string, subjectId: string, category?: string, periodId?: number) => {
+export const getGradeItemsService = async (classId: string, subjectId: string, category?: string, periodId?: number, facultyId?: string) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -129,7 +129,8 @@ export const getGradeItemsService = async (classId: string, subjectId: string, c
         const model = new GradebookModel(connection);
         const classBuf = UUIDToBuffer(classId);
         const subjectBuf = UUIDToBuffer(subjectId);
-        const items = await model.getGradeItems(classBuf, subjectBuf, category as GradeItemCategory | undefined, periodId);
+        const facultyBuf = facultyId ? UUIDToBuffer(facultyId) : undefined;
+        const items = await model.getGradeItems(classBuf, subjectBuf, category as GradeItemCategory | undefined, periodId, facultyBuf);
         return items.map(i => ({
             id: bufferToUUID(i.id),
             class_id: bufferToUUID(i.class_id),
@@ -328,13 +329,15 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
             throw new ForbiddenError("You are not assigned to teach this subject in this class");
         }
 
-        const items = await model.getGradeItems(classBuf, subjectBuf, undefined, periodId);
+        const items = await model.getGradeItems(classBuf, subjectBuf, undefined, periodId, facultyBuf);
         const { getCurrentSchoolYearService } = await import("./school-years.js");
         const classModel = new (await import("../model/classes.js")).default(connection);
         const classInfo = await classModel.getClassById(classBuf);
         if (!classInfo) {
             throw new NotFoundError("Class not found", 404);
         }
+        const subjectModel = new (await import("../model/subjects.js")).default(connection);
+        const subjectInfo = await subjectModel.getSubjectById(subjectBuf);
         const currentSy = await getCurrentSchoolYearService(classInfo.school_id);
         if (!currentSy) {
             throw new BadRequestError("No current school year is set");
@@ -428,7 +431,7 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
 
         return {
             class: { id: bufferToUUID(classBuf), name: classInfo.class_name, section: classInfo.section, grade_level: classInfo.grade_level },
-            subject: { id: bufferToUUID(subjectBuf) },
+            subject: { id: bufferToUUID(subjectBuf), name: subjectInfo?.name ?? null },
             weights: weights.map(w => ({ category: w.category, weight: Number(w.weight) })),
             items: items.map(i => ({
                 id: bufferToUUID(i.id),

@@ -64,6 +64,7 @@ export const instantiateTemplate = async (
         due_date?: unknown;
         title?: unknown;
         max_score?: unknown;
+        subject_id?: unknown;
     }> & { user?: TokenPayload },
     res: Response,
     next: NextFunction

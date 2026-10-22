@@ -35,6 +35,7 @@ import ClassModuleRouter from "./routes/classModules.js";
 import type{ Express } from "express";
 
 // ==================  Middleware ======================
+import path from "node:path";
 import ErrorHandler from "./middleware/ErrorHandler.js"
 const app: Express = express();
 
@@ -44,6 +45,8 @@ app.use(cors({
     origin: "http://localhost:5173",
     credentials: true,
 }));
+
+app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
 
 app.use('/api', SchoolRouter);
 app.use('/api', AuthRouter);

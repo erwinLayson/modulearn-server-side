@@ -216,6 +216,7 @@ export const instantiateTemplateService = async (
         due_date?: unknown;
         title?: unknown;
         max_score?: unknown;
+        subject_id?: unknown;
     },
     teacherId: string,
     schoolId: number
@@ -244,8 +245,11 @@ export const instantiateTemplateService = async (
 
         classroomId = assignment.classroom_id;
         subjectId = assignment.subject_id;
+        if (typeof payload.subject_id === "string" && payload.subject_id.trim().length > 0) {
+            subjectId = parseUuid(payload.subject_id.trim(), "subject_id");
+        }
         if (!subjectId) {
-            throw new BadRequestError("This module has no subject");
+            throw new BadRequestError("Subject is required");
         }
 
         const classInfo = await new ClassModel(connection).getClassById(classroomId);

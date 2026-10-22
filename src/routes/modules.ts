@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { RequestHandler } from "express";
 
 import {
     registerModule,
@@ -16,6 +17,14 @@ import {
     updateMyModuleTemplate,
     deleteMyModuleTemplate,
 } from "../controller/modules.js";
+import {
+    listModuleLessons,
+    createModuleLesson,
+    updateModuleLesson,
+    deleteModuleLesson,
+    downloadModuleLessonFile,
+} from "../controller/moduleLessons.js";
+import { lessonUpload } from "../middleware/lessonUpload.js";
 import { authMiddleware, roleMiddleware } from "../middleware/auth.js";
 import { enforceSchoolScope, enforceSchoolParam, verifyOwnership } from "../middleware/schoolScope.js";
 
@@ -33,6 +42,13 @@ router.get('/modules/mine/:id/eligible-classrooms', authMiddleware, roleMiddlewa
 router.post('/modules/mine/:id/templates', authMiddleware, roleMiddleware('faculty'), createMyModuleTemplate);
 router.put('/modules/mine/:id/templates/:templateId', authMiddleware, roleMiddleware('faculty'), updateMyModuleTemplate);
 router.delete('/modules/mine/:id/templates/:templateId', authMiddleware, roleMiddleware('faculty'), deleteMyModuleTemplate);
+
+// Lessons belonging to teacher-owned modules
+router.get('/modules/mine/:id/lessons', authMiddleware, roleMiddleware('faculty'), listModuleLessons);
+router.post('/modules/mine/:id/lessons', authMiddleware, roleMiddleware('faculty'), lessonUpload.single('file'), createModuleLesson as RequestHandler);
+router.put('/modules/mine/:id/lessons/:lesson_id', authMiddleware, roleMiddleware('faculty'), lessonUpload.single('file'), updateModuleLesson as RequestHandler);
+router.delete('/modules/mine/:id/lessons/:lesson_id', authMiddleware, roleMiddleware('faculty'), deleteModuleLesson);
+router.get('/modules/mine/:id/lessons/:lesson_id/file', authMiddleware, roleMiddleware('faculty'), downloadModuleLessonFile);
 
 router.get('/modules/school/:school_id', authMiddleware, roleMiddleware('school_admin', 'super_admin'), enforceSchoolParam, getModulesBySchoolId);
 router.get('/modules/:id', authMiddleware, verifyOwnership('modules'), getModuleById);

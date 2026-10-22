@@ -1,6 +1,7 @@
 import { databasePool } from "../config/database.js";
 import ModuleModel from "../model/modules.js";
 import ModuleActivityTemplateModel from "../model/moduleActivityTemplates.js";
+import ModuleLessonModel from "../model/moduleLessons.js";
 import SubjectModel from "../model/subjects.js";
 import {
     BadRequestError,
@@ -19,6 +20,7 @@ import { MODULE_STATUSES } from "../constant/modules.js";
 import { bufferToUUID } from "../helper/bufferToUUID.js";
 import { UUIDToBuffer } from "../helper/UUIDToBuffer.js";
 import { generateRandomUUID } from "../helper/generateRandomId.js";
+import { serializeLesson } from "./moduleLessons.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,6 +36,7 @@ const serializeModuleList = (m: ModuleListRow) => ({
     ...serializeModule(m),
     template_count: Number(m.template_count ?? 0),
     assignment_count: Number(m.assignment_count ?? 0),
+    lesson_count: Number(m.lesson_count ?? 0),
 });
 
 const serializeTemplate = (t: {
@@ -115,7 +118,7 @@ const getSubjectForSchool = async (
     return subject;
 };
 
-const getOwnedModule = async (
+export const getOwnedModule = async (
     connection: Awaited<ReturnType<ReturnType<typeof databasePool>["getConnection"]>>,
     moduleId: string,
     teacherId: string,
@@ -341,10 +344,13 @@ export const getTeacherModuleService = async (
         const templateModel = new ModuleActivityTemplateModel(connection);
         const templates = await templateModel.listByModule(module.id);
         const assignments = await new ModuleModel(connection).getModuleAssignments(module.id);
+        const lessonModel = new ModuleLessonModel(connection);
+        const lessons = await lessonModel.listByModule(module.id);
 
         return {
             module: serializeModule(module),
             templates: templates.map(serializeTemplate),
+            lessons: lessons.map(serializeLesson),
             assignments: assignments.map((a) => ({
                 ...a,
                 id: bufferToUUID(a.id),

@@ -20,6 +20,7 @@ export interface ModuleProp {
 export interface ModuleListRow extends ModuleProp {
     template_count: number;
     assignment_count: number;
+    lesson_count?: number;
 }
 
 export interface ModuleListFilters {

@@ -90,7 +90,8 @@ export default class Module {
                    m.admin_id, m.owner_faculty_id, m.status, m.lesson_content,
                    m.created_at, m.updated_at,
                    (SELECT COUNT(*) FROM module_activity_templates t WHERE t.module_id = m.id) AS template_count,
-                   (SELECT COUNT(*) FROM class_modules cm WHERE cm.module_id = m.id) AS assignment_count
+                   (SELECT COUNT(*) FROM class_modules cm WHERE cm.module_id = m.id) AS assignment_count,
+                   (SELECT COUNT(*) FROM module_lessons ml WHERE ml.module_id = m.id) AS lesson_count
             FROM modules m
             WHERE m.owner_faculty_id = ?${where}
             ORDER BY m.updated_at DESC, m.created_at DESC

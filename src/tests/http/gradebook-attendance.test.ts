@@ -1821,16 +1821,10 @@ describe("gradebook and attendance endpoint behavior", () => {
         const subject = await school.addSubject();
         const { classroom } = await buildEnrolledClass(school, teacher, subject, student);
 
-        // The dashboard buckets "today" with toISOString(), so use the same
-        // UTC date here rather than the local one.
+        // Both marking and the dashboard bucket "today" in the server's
+        // local timezone.
         expectSuccess(
-            await markAttendance(
-                teacher,
-                classroom,
-                subject,
-                student,
-                new Date().toISOString().slice(0, 10)
-            ),
+            await markAttendance(teacher, classroom, subject, student, isoDate(new Date())),
             200
         );
 

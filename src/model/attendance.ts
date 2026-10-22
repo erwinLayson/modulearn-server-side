@@ -1,6 +1,13 @@
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { InternalServerError } from "../helper/error.js";
 
+/** Format a Date in the server's local timezone as YYYY-MM-DD. */
+const toLocalDateOnly = (value: Date): string => {
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${value.getFullYear()}-${month}-${day}`;
+};
+
 export interface AttendanceRecord {
     student_id: Buffer;
     subject_id: Buffer;
@@ -264,10 +271,10 @@ export default class Attendance {
     ): Promise<FacultyDashboardSummary> {
         try {
             const today = new Date();
-            const todayStr = today.toISOString().split('T')[0];
+            const todayStr = toLocalDateOnly(today);
             const weekStart = new Date(today);
             weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
-            const weekStartStr = weekStart.toISOString().split('T')[0];
+            const weekStartStr = toLocalDateOnly(weekStart);
             const weekEndStr = todayStr;
 
             // Get classes teacher teaches today (based on schedule or all assigned classes)

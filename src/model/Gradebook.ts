@@ -21,6 +21,9 @@ export interface GradeItemRow {
     max_score: number;
     due_date: string | null;
     period_id: number | null;
+    instructions: string | null;
+    class_module_id: Buffer | null;
+    module_template_id: Buffer | null;
     created_at: Date;
 }
 
@@ -122,7 +125,7 @@ export default class Gradebook {
 
     async getGradeItems(classId: Buffer, subjectId: Buffer, category?: GradeItemCategory, periodId?: number, facultyId?: Buffer): Promise<GradeItemRow[]> {
         try {
-            let query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id, created_at FROM grade_items WHERE class_id = ? AND subject_id = ?`;
+            let query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id, instructions, class_module_id, module_template_id, created_at FROM grade_items WHERE class_id = ? AND subject_id = ?`;
             const params: (Buffer | GradeItemCategory | number)[] = [classId, subjectId];
             if (category) {
                 query += ` AND category = ?`;
@@ -146,7 +149,7 @@ export default class Gradebook {
 
     async getGradeItemById(id: Buffer): Promise<GradeItemRow | null> {
         try {
-            const query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id, created_at FROM grade_items WHERE id = ?`;
+            const query = `SELECT id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id, instructions, class_module_id, module_template_id, created_at FROM grade_items WHERE id = ?`;
             const [rows] = await this.connection.execute<RowDataPacket[]>(query, [id]);
             return (rows as GradeItemRow[])[0] || null;
         } catch (err) {
@@ -154,11 +157,34 @@ export default class Gradebook {
         }
     }
 
-    async createGradeItem(classId: Buffer, subjectId: Buffer, facultyId: Buffer, category: GradeItemCategory, title: string, maxScore: number, dueDate: string | null, periodId?: number): Promise<Buffer> {
+    async createGradeItem(
+        classId: Buffer,
+        subjectId: Buffer,
+        facultyId: Buffer,
+        category: GradeItemCategory,
+        title: string,
+        maxScore: number,
+        dueDate: string | null,
+        periodId?: number,
+        options?: {
+            instructions?: string | null;
+            classModuleId?: Buffer | null;
+            moduleTemplateId?: Buffer | null;
+        }
+    ): Promise<Buffer> {
         try {
             const idBuf = generateRandomUUID();
-            const query = `INSERT INTO grade_items (id, class_id, subject_id, faculty_id, category, title, max_score, due_date, period_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-            await this.connection.execute<ResultSetHeader>(query, [idBuf, classId, subjectId, facultyId, category, title, maxScore, dueDate || null, periodId ?? null]);
+            const query = `
+                INSERT INTO grade_items
+                    (id, class_id, subject_id, faculty_id, category, title, max_score,
+                     due_date, period_id, instructions, class_module_id, module_template_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+            await this.connection.execute<ResultSetHeader>(query, [
+                idBuf, classId, subjectId, facultyId, category, title, maxScore,
+                dueDate || null, periodId ?? null, options?.instructions ?? null,
+                options?.classModuleId ?? null, options?.moduleTemplateId ?? null,
+            ]);
             return idBuf;
         } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
@@ -304,7 +330,7 @@ export default class Gradebook {
         scores: { grade_item_id: Buffer; score: number }[];
     }> {
         try {
-            let itemsQuery = `SELECT id, category, title, max_score, due_date FROM grade_items WHERE class_id = ? AND subject_id = ?`;
+            let itemsQuery = `SELECT id, category, title, max_score, due_date, instructions FROM grade_items WHERE class_id = ? AND subject_id = ?`;
             const itemsParams: (Buffer | number)[] = [classId, subjectId];
             if (periodId !== undefined) {
                 itemsQuery += ` AND period_id = ?`;

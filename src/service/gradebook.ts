@@ -36,6 +36,9 @@ const validateGradeItemPeriod = async (
     if (period.school_id !== classInfo.school_id) {
         throw new BadRequestError("Academic period does not belong to this school");
     }
+    if (Number(period.school_year_id) !== Number(classInfo.school_year_id)) {
+        throw new BadRequestError("Academic period does not belong to this class's school year");
+    }
 
     return periodIdNum;
 };
@@ -141,6 +144,9 @@ export const getGradeItemsService = async (classId: string, subjectId: string, c
             max_score: Number(i.max_score),
             due_date: i.due_date,
             period_id: i.period_id,
+            instructions: i.instructions,
+            class_module_id: i.class_module_id ? bufferToUUID(i.class_module_id) : null,
+            module_template_id: i.module_template_id ? bufferToUUID(i.module_template_id) : null,
         }));
     } finally {
         connection.release();
@@ -155,7 +161,12 @@ export const createGradeItemService = async (
     title: string,
     maxScore: number,
     dueDate: string | null,
-    periodId: number | undefined
+    periodId: number | undefined,
+    options?: {
+        instructions?: string | null;
+        classModuleId?: Buffer | string | null;
+        moduleTemplateId?: Buffer | string | null;
+    }
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -206,7 +217,28 @@ export const createGradeItemService = async (
             throw new BadRequestError("Cannot add grade items: this academic period is finalized");
         }
 
-        const id = await model.createGradeItem(classBuf, subjectBuf, facultyBuf, category as GradeItemCategory, title.trim(), maxScore, dueDate, periodIdNum);
+        const classModuleId = typeof options?.classModuleId === "string"
+            ? UUIDToBuffer(options.classModuleId)
+            : options?.classModuleId ?? null;
+        const moduleTemplateId = typeof options?.moduleTemplateId === "string"
+            ? UUIDToBuffer(options.moduleTemplateId)
+            : options?.moduleTemplateId ?? null;
+
+        const id = await model.createGradeItem(
+            classBuf,
+            subjectBuf,
+            facultyBuf,
+            category as GradeItemCategory,
+            title.trim(),
+            maxScore,
+            dueDate,
+            periodIdNum,
+            {
+                instructions: options?.instructions ?? null,
+                classModuleId,
+                moduleTemplateId,
+            }
+        );
         return { id: bufferToUUID(id), message: "Grade item created successfully" };
     } finally {
         connection.release();
@@ -440,6 +472,9 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
                 max_score: Number(i.max_score),
                 due_date: i.due_date,
                 period_id: i.period_id,
+                instructions: i.instructions,
+                class_module_id: i.class_module_id ? bufferToUUID(i.class_module_id) : null,
+                module_template_id: i.module_template_id ? bufferToUUID(i.module_template_id) : null,
             })),
             students: results,
         };

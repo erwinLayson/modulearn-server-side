@@ -8,7 +8,10 @@
     "migrate": "tsx src/migration.ts",
     "seed:students": "tsx src/seeders/001_seed_students_and_records.ts",
     "start": "node ./dist/server.js",
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "test": "tsx src/tests/gradeCalculation.test.ts",
+    "test:modules": "tsx src/tests/teachingModules.test.ts",
+    "test:all": "pnpm test && pnpm test:modules"
   },
   "keywords": [],
   "author": "",

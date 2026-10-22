@@ -23,6 +23,9 @@ export interface GradeItemProp {
     max_score: number;
     due_date: string | null;
     period_id: number | null;
+    instructions?: string | null;
+    class_module_id?: Buffer | null;
+    module_template_id?: Buffer | null;
 }
 
 export interface GradeProp {

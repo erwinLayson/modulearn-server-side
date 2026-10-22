@@ -28,7 +28,7 @@ export default class Subject {
 
     async getSubjectById(id: Buffer):Promise<SubjectProp | null> {
         try {
-            const query = `SELECT id, name, subject_code, description, school_id, admin_id, created_at, updated_at FROM subjects WHERE id = ? LIMIT 1`;
+            const query = `SELECT id, name, subject_code, description, school_id, admin_id, is_active, created_at, updated_at FROM subjects WHERE id = ? LIMIT 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [id]);
             if(row.length === 0) { return null }
             return row[0] as SubjectProp;
@@ -127,6 +127,38 @@ export default class Subject {
             const query = `SELECT id, first_name, last_name, email FROM faculties WHERE school_id = ? AND is_active = 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [school_id]);
             return row as {id: Buffer; first_name: string; last_name: string; email: string}[];
+        } catch(err) {
+            throw new InternalServerError("Internal Server error", 500, err);
+        }
+    }
+
+    async getAssignedSubjectsForFaculty(facultyId: Buffer, schoolId: number): Promise<SubjectProp[]> {
+        try {
+            const query = `
+                SELECT DISTINCT
+                    s.id, s.name, s.subject_code, s.description,
+                    s.school_id, s.admin_id, s.is_active, s.created_at, s.updated_at
+                FROM subjects s
+                WHERE s.school_id = ? AND s.is_active = 1
+                  AND (
+                    s.id IN (
+                        SELECT sf.subject_id
+                        FROM subject_faculties sf
+                        WHERE sf.faculty_id = ?
+                    )
+                    OR s.id IN (
+                        SELECT cf.subject_id
+                        FROM class_faculties cf
+                        INNER JOIN classes c ON c.id = cf.class_id
+                        WHERE cf.faculty_id = ?
+                          AND cf.subject_id IS NOT NULL
+                          AND c.is_active = 1
+                    )
+                  )
+                ORDER BY s.name ASC
+            `;
+            const [row] = await this.connection.execute<RowDataPacket[]>(query, [schoolId, facultyId, facultyId]);
+            return row as SubjectProp[];
         } catch(err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }

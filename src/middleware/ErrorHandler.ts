@@ -38,6 +38,8 @@ function mapMysqlError(err: unknown): AppError | null {
                 uq_faculties_email_school: "A faculty member with this email already exists in this school.",
                 uq_students_email_school: "A student with this email already exists in this school.",
                 uq_school_admins_email_school: "An admin account with this email already exists in this school.",
+                uq_class_modules: "This module is already assigned to this class for this school year.",
+                uq_grade_items: "An activity with this title already exists for this class and subject.",
             };
             return new ConflictError(
                 (key && messages[key]) ?? "This record already exists. Please check for duplicates before trying again."

@@ -117,7 +117,7 @@ export default class Class {
     async getClassById(id: Buffer):Promise<(ClassProp & { faculty_name: string | null }) | null> {
         try {
             const query = `
-                SELECT c.id, c.class_name, c.school_id, c.school_year_id, c.faculty_id, c.capacity, c.section, c.grade_level, c.schedule, c.created_at,
+                SELECT c.id, c.class_name, c.school_id, c.school_year_id, c.faculty_id, c.capacity, c.section, c.grade_level, c.schedule, c.is_active, c.created_at,
                        CONCAT(f.first_name, ' ', f.last_name) as faculty_name
                 FROM classes c
                 LEFT JOIN faculties f ON c.faculty_id = f.id

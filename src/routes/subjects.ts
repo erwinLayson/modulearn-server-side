@@ -1,12 +1,13 @@
 import {Router} from "express";
 
-import {registerSubject, getSubjectsBySchoolId, getAllSubjects, getSubjectById, updateSubject, deleteSubject, assignFacultyToSubject, removeFacultyFromSubject, getFacultiesBySubjectId, getFacultiesBySchoolId} from "../controller/subjects.js";
+import {registerSubject, getSubjectsBySchoolId, getAllSubjects, getSubjectById, updateSubject, deleteSubject, assignFacultyToSubject, removeFacultyFromSubject, getFacultiesBySubjectId, getFacultiesBySchoolId, getAssignedSubjects} from "../controller/subjects.js";
 import {authMiddleware, roleMiddleware} from "../middleware/auth.js";
 import {enforceSchoolScope, enforceSchoolParam, verifyOwnership} from "../middleware/schoolScope.js";
 
 const router: Router = Router();
 router.post('/subjects', authMiddleware, roleMiddleware('school_admin'), enforceSchoolScope, registerSubject);
 router.get('/subjects', authMiddleware, roleMiddleware('super_admin'), getAllSubjects);
+router.get('/subjects/assigned', authMiddleware, roleMiddleware('faculty'), getAssignedSubjects);
 router.get('/subjects/school/:school_id', authMiddleware, enforceSchoolParam, getSubjectsBySchoolId);
 router.get('/subjects/faculties/school/:school_id', authMiddleware, enforceSchoolParam, getFacultiesBySchoolId);
 router.get('/subjects/:id', authMiddleware, verifyOwnership('subjects'), getSubjectById);

@@ -158,3 +158,21 @@ export const getFacultiesBySchoolIdForSubjectService = async (schoolId: number) 
         connection.release();
     }
 };
+
+export const getAssignedSubjectsForFacultyService = async (facultyId: string, schoolId: number) => {
+    const pool = databasePool();
+    const connection = await pool.getConnection();
+
+    try {
+        const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
+        const subjectModel = new SubjectModel(connection);
+        const subjects = await subjectModel.getAssignedSubjectsForFaculty(UUIDToBuffer(facultyId), schoolId);
+        return subjects.map(s => ({
+            ...s,
+            id: bufferToUUID(s.id),
+            admin_id: bufferToUUID(s.admin_id),
+        }));
+    } finally {
+        connection.release();
+    }
+};

@@ -3,7 +3,7 @@ import type{Request, Response, NextFunction} from "express";
 import type{SubjectProp, SubjectPayload} from "../constant/subjects.js";
 import type{TokenPayload} from "../helper/jwt.js";
 
-import { registerSubjectService, getSubjectsBySchoolIdService, getSubjectByIdService, updateSubjectService, deleteSubjectService, getAllSubjectsService, assignFacultyToSubjectService, removeFacultyFromSubjectService, getFacultiesBySubjectIdService, getFacultiesBySchoolIdForSubjectService } from "../service/subjects.js";
+import { registerSubjectService, getSubjectsBySchoolIdService, getSubjectByIdService, updateSubjectService, deleteSubjectService, getAllSubjectsService, assignFacultyToSubjectService, removeFacultyFromSubjectService, getFacultiesBySubjectIdService, getFacultiesBySchoolIdForSubjectService, getAssignedSubjectsForFacultyService } from "../service/subjects.js";
 
 import {CheckData} from "../helper/checkdata.js";
 import {generateRandomUUID} from "../helper/generateRandomId.js";
@@ -170,6 +170,19 @@ export const getFacultiesBySchoolId = async (
     try {
         const result = await getFacultiesBySchoolIdForSubjectService(Number(school_id));
         sendSuccess(res, "Faculties retrieved", result);
+    } catch(err) {
+        next(err);
+    }
+};
+
+export const getAssignedSubjects = async (
+    req: Request & { user?: TokenPayload },
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const result = await getAssignedSubjectsForFacultyService(req.user!.id, req.user!.school_id!);
+        sendSuccess(res, "Assigned subjects retrieved", result);
     } catch(err) {
         next(err);
     }

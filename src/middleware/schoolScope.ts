@@ -124,11 +124,16 @@ export const verifyAdviserOfStudent = async (
  * For GET/PUT/DELETE endpoints by :id param.
  * super_admin passes through.
  *
- * Usage: verifyOwnership('students') or verifyOwnership('classes', 'school_id')
+ * By default the :id is treated as the primary key when it looks like a UUID and
+ * as a school id otherwise. Pass `idColumn` for resources whose primary key is
+ * not a UUID (e.g. school years use an auto-increment id).
+ *
+ * Usage: verifyOwnership('students') or verifyOwnership('school_years', 'school_id', 'id')
  */
 export const verifyOwnership = (
     table: string,
-    schoolIdColumn: string = "school_id"
+    schoolIdColumn: string = "school_id",
+    idColumn?: string
 ): (req: Request<{id: string}>, _res: Response, next: NextFunction) => Promise<void> => {
     return async (
         req: Request<{id: string}>,
@@ -158,9 +163,9 @@ export const verifyOwnership = (
             const pool = databasePool();
             const isUuid = /^[0-9a-f]{32}$/i.test(id.replace(/-/g, ""));
             const paramValue = isUuid ? Buffer.from(id.replace(/-/g, ""), "hex") : id;
-            const idColumn = isUuid ? "id" : "school_id";
+            const resolvedIdColumn = idColumn ?? (isUuid ? "id" : "school_id");
             const [rows] = await pool.execute(
-                `SELECT ${schoolIdColumn} FROM ${table} WHERE ${idColumn} = ? LIMIT 1`,
+                `SELECT ${schoolIdColumn} FROM ${table} WHERE ${resolvedIdColumn} = ? LIMIT 1`,
                 [paramValue]
             );
 

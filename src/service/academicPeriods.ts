@@ -11,6 +11,12 @@ export const getPeriodsBySchoolAndYearService = async (schoolId: number, schoolY
     const connection = await pool.getConnection();
     try {
         const model = new AcademicPeriodModel(connection);
+
+        const year = await new SchoolYearModel(connection).getById(schoolYearId);
+        if (!year || year.school_id !== schoolId) {
+            throw new NotFoundError("School year not found", 404);
+        }
+
         return await model.getBySchoolAndYear(schoolId, schoolYearId);
     } finally {
         connection.release();

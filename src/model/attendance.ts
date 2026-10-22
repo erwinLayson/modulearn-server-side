@@ -1,5 +1,5 @@
-import type{PoolConnection, ResultSetHeader, RowDataPacket} from "mysql2/promise";
-import {InternalServerError} from "../helper/error.js";
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from "mysql2/promise";
+import { InternalServerError } from "../helper/error.js";
 
 export interface AttendanceRecord {
     student_id: Buffer;
@@ -93,7 +93,7 @@ export interface SchoolAttendanceMatrixItem {
 }
 
 export default class Attendance {
-    constructor(private connection: PoolConnection){}
+    constructor(private connection: PoolConnection) { }
 
     async upsertAttendance(
         classId: Buffer,
@@ -103,7 +103,7 @@ export default class Attendance {
         markedBy: Buffer,
         attendanceDate: string,
         recordedAt: Date
-    ):Promise<void> {
+    ): Promise<void> {
         try {
             const query = `
                 INSERT INTO attendance_records(class_id, student_id, subject_id, attendance_date, status, marked_by, recorded_at)
@@ -111,7 +111,7 @@ export default class Attendance {
                 ON DUPLICATE KEY UPDATE status = VALUES(status), marked_by = VALUES(marked_by), recorded_at = VALUES(recorded_at)
             `;
             await this.connection.execute<ResultSetHeader>(query, [classId, studentId, subjectId, attendanceDate, status, markedBy, recordedAt]);
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -120,7 +120,7 @@ export default class Attendance {
         classId: Buffer,
         attendanceDate: string,
         subjectId?: Buffer
-    ):Promise<AttendanceRecord[]> {
+    ): Promise<AttendanceRecord[]> {
         try {
             let query = `
                 SELECT student_id, subject_id, status, recorded_at, marked_by
@@ -136,7 +136,7 @@ export default class Attendance {
 
             const [row] = await this.connection.execute<RowDataPacket[]>(query, params);
             return row as AttendanceRecord[];
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -145,7 +145,7 @@ export default class Attendance {
         classId: Buffer,
         subjectId: Buffer,
         attendanceDate: string
-    ):Promise<boolean> {
+    ): Promise<boolean> {
         try {
             const query = `
                 SELECT COUNT(*) as cnt FROM attendance_records
@@ -153,7 +153,7 @@ export default class Attendance {
             `;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [classId, subjectId, attendanceDate]);
             return (row[0]?.cnt ?? 0) > 0;
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -171,7 +171,7 @@ export default class Attendance {
         },
         page: number = 1,
         limit: number = 50
-    ):Promise<{data: AttendanceHistoryItem[]; total: number}> {
+    ): Promise<{ data: AttendanceHistoryItem[]; total: number }> {
         try {
             const conditions: string[] = [];
             const params: (Buffer | number | string)[] = [];
@@ -252,8 +252,8 @@ export default class Attendance {
                 LIMIT ? OFFSET ?
             `;
             const [rows] = await this.connection.execute<RowDataPacket[]>(dataQuery, [...params, limit, offset]);
-            return {data: rows as AttendanceHistoryItem[], total};
-        } catch(err) {
+            return { data: rows as AttendanceHistoryItem[], total };
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -261,7 +261,7 @@ export default class Attendance {
     async getFacultyDashboardSummary(
         facultyId: Buffer,
         schoolId: number
-    ):Promise<FacultyDashboardSummary> {
+    ): Promise<FacultyDashboardSummary> {
         try {
             const today = new Date();
             const todayStr = today.toISOString().split('T')[0];
@@ -332,7 +332,7 @@ export default class Attendance {
                     attendance_rate: attendanceRate,
                 },
             };
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -341,7 +341,7 @@ export default class Attendance {
         studentId: Buffer,
         schoolId: number,
         schoolYearId?: number
-    ):Promise<StudentSubjectAttendance[]> {
+    ): Promise<StudentSubjectAttendance[]> {
         try {
             // Get student's enrolled classes for the school year
             let classQuery = `
@@ -414,7 +414,7 @@ export default class Attendance {
             }
 
             return results;
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -427,7 +427,7 @@ export default class Attendance {
         dateTo?: string,
         page: number = 1,
         limit: number = 50
-    ):Promise<{data: StudentAttendanceDetail[]; total: number}> {
+    ): Promise<{ data: StudentAttendanceDetail[]; total: number }> {
         try {
             const conditions: string[] = [`ar.student_id = ?`, `ar.class_id = ?`, `ar.subject_id = ?`];
             const params: (Buffer | string)[] = [studentId, classId, subjectId];
@@ -462,8 +462,8 @@ export default class Attendance {
                 LIMIT ? OFFSET ?
             `;
             const [rows] = await this.connection.execute<RowDataPacket[]>(dataQuery, [...params, limit, offset]);
-            return {data: rows as StudentAttendanceDetail[], total};
-        } catch(err) {
+            return { data: rows as StudentAttendanceDetail[], total };
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -480,7 +480,7 @@ export default class Attendance {
         },
         page: number = 1,
         limit: number = 50
-    ):Promise<{data: SchoolAttendanceReportItem[]; total: number}> {
+    ): Promise<{ data: SchoolAttendanceReportItem[]; total: number }> {
         try {
             const conditions: string[] = [`c.school_id = ?`];
             const params: (number | Buffer | string)[] = [schoolId];
@@ -552,8 +552,8 @@ export default class Attendance {
                 LIMIT ? OFFSET ?
             `;
             const [rows] = await this.connection.execute<RowDataPacket[]>(dataQuery, [...params, limit, offset]);
-            return {data: rows as SchoolAttendanceReportItem[], total};
-        } catch(err) {
+            return { data: rows as SchoolAttendanceReportItem[], total };
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -629,7 +629,7 @@ export default class Attendance {
                 [schoolYearId, schoolId, dateFrom, dateTo, ...outerParams]
             );
             return rows as SchoolAttendanceMatrixItem[];
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -644,7 +644,7 @@ export default class Attendance {
         },
         page: number = 1,
         limit: number = 50
-    ):Promise<{data: {subject_id: Buffer; subject_name: string; class_name: string; teacher_name: string; attendance_date: string; status: "present" | "absent"}[]; total: number}> {
+    ): Promise<{ data: { subject_id: Buffer; subject_name: string; class_name: string; teacher_name: string; attendance_date: string; status: "present" | "absent" }[]; total: number }> {
         try {
             const conditions: string[] = [`ar.student_id = ?`];
             const params: (Buffer | number | string)[] = [studentId];
@@ -693,24 +693,24 @@ export default class Attendance {
                 LIMIT ? OFFSET ?
             `;
             const [rows] = await this.connection.execute<RowDataPacket[]>(dataQuery, [...params, limit, offset]);
-            return {data: rows as {subject_id: Buffer; subject_name: string; class_name: string; teacher_name: string; attendance_date: string; status: "present" | "absent"}[], total};
-        } catch(err) {
+            return { data: rows as { subject_id: Buffer; subject_name: string; class_name: string; teacher_name: string; attendance_date: string; status: "present" | "absent" }[], total };
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
 
-    async getClassSchoolId(classId: Buffer):Promise<{school_id: number} | null> {
+    async getClassSchoolId(classId: Buffer): Promise<{ school_id: number } | null> {
         try {
             const query = `SELECT school_id FROM classes WHERE id = ? LIMIT 1`;
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [classId]);
-            if(row.length === 0) { return null; }
-            return row[0] as {school_id: number};
-        } catch(err) {
+            if (row.length === 0) { return null; }
+            return row[0] as { school_id: number };
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
 
-    async isTeacherAssignedToClass(facultyId: Buffer, classId: Buffer):Promise<boolean> {
+    async isTeacherAssignedToClass(facultyId: Buffer, classId: Buffer): Promise<boolean> {
         try {
             const query = `
                 SELECT COUNT(*) as cnt FROM (
@@ -724,12 +724,12 @@ export default class Attendance {
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [classId, facultyId, classId, facultyId]);
             const count = row[0]?.cnt ?? 0;
             return count > 0;
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
 
-    async isTeacherAssignedToClassSubject(facultyId: Buffer, classId: Buffer, subjectId: Buffer):Promise<boolean> {
+    async isTeacherAssignedToClassSubject(facultyId: Buffer, classId: Buffer, subjectId: Buffer): Promise<boolean> {
         try {
             const query = `
                 SELECT COUNT(*) as cnt FROM class_faculties
@@ -738,7 +738,7 @@ export default class Attendance {
             const [row] = await this.connection.execute<RowDataPacket[]>(query, [classId, facultyId, subjectId]);
             const count = row[0]?.cnt ?? 0;
             return count > 0;
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }
@@ -834,7 +834,7 @@ export default class Attendance {
         schoolId: number,
         attendanceDate: Date,
         subjectId?: Buffer
-    ):Promise<AttendanceRecordWithClass[]> {
+    ): Promise<AttendanceRecordWithClass[]> {
         try {
             let query = `
                 SELECT ar.class_id, ar.student_id, ar.subject_id, ar.status, ar.recorded_at, ar.marked_by
@@ -851,7 +851,7 @@ export default class Attendance {
 
             const [row] = await this.connection.execute<RowDataPacket[]>(query, params);
             return row as AttendanceRecordWithClass[];
-        } catch(err) {
+        } catch (err) {
             throw new InternalServerError("Internal Server error", 500, err);
         }
     }

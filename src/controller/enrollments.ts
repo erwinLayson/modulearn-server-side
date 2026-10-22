@@ -1,4 +1,5 @@
 import type{Request, Response, NextFunction} from "express";
+import type{TokenPayload} from "../helper/jwt.js";
 
 import { enrollStudentService, getEnrollmentsByClassAndSchoolYearService, getEnrollmentsByStudentIdService, getEnrollmentsByStudentAndSchoolYearService, getClassesByStudentIdService, updateEnrollmentStatusService, deleteEnrollmentService } from "../service/enrollments.js";
 
@@ -8,11 +9,12 @@ import {sendSuccess} from "../helper/sendSuccess.js";
 import { UUIDToBuffer } from "../helper/UUIDToBuffer.js";
 
 export const enrollStudent = async (
-    req: Request<{}, {}, { student_id: string; class_id: string; school_year_id: number; grade_level: number; subject_ids: string[] }>,
+    req: Request<{}, {}, { student_id: string; class_id: string; school_year_id: number; grade_level: number; subject_ids: string[] }> & { user?: TokenPayload },
     res: Response,
     next: NextFunction
 ) => {
     const {student_id, class_id, school_year_id, grade_level, subject_ids} = req.body;
+    const schoolId = req.user?.school_id;
 
     CheckData({ student_id, class_id, school_year_id, grade_level });
 
@@ -26,7 +28,7 @@ export const enrollStudent = async (
     };
 
     try {
-        await enrollStudentService(enrollmentData, subject_ids || []);
+        await enrollStudentService(enrollmentData, subject_ids || [], schoolId);
         sendSuccess(res, "Student enrolled successfully", undefined, 201);
     } catch(err) {
         next(err);

@@ -8,6 +8,34 @@ import { computeNormalizedFinalGrade } from "../helper/gradeCalculation.js";
 import type { PoolConnection } from "mysql2/promise";
 
 // Validates a client-provided academic period: required, exists, and belongs to the class's school.
+// DATE columns are read back as Date objects; expose them as YYYY-MM-DD so a
+// date-only value round-trips without a timezone shift.
+const toDateOnly = (value: string | Date | null): string | null => {
+    if (value === null) return null;
+    if (typeof value === "string") return value.slice(0, 10);
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${value.getFullYear()}-${month}-${day}`;
+};
+
+// Read routes are reachable by any faculty/student role; the class must still
+// belong to the caller's school. Undefined means no school to enforce.
+const assertClassInSchool = async (
+    connection: PoolConnection,
+    classId: Buffer,
+    schoolId?: number
+): Promise<void> => {
+    if (schoolId === undefined) return;
+    const classModel = new (await import("../model/classes.js")).default(connection);
+    const classInfo = await classModel.getClassById(classId);
+    if (!classInfo) {
+        throw new NotFoundError("Class not found", 404);
+    }
+    if (classInfo.school_id !== schoolId) {
+        throw new ForbiddenError("Access denied: cross-school violation");
+    }
+};
+
 const validateGradeItemPeriod = async (
     connection: PoolConnection,
     classId: Buffer,
@@ -45,7 +73,7 @@ const validateGradeItemPeriod = async (
 
 // --- Grading Weights ---
 
-export const getGradingWeightsService = async (classId: string, subjectId: string) => {
+export const getGradingWeightsService = async (classId: string, subjectId: string, schoolId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -53,6 +81,7 @@ export const getGradingWeightsService = async (classId: string, subjectId: strin
         const model = new GradebookModel(connection);
         const classBuf = UUIDToBuffer(classId);
         const subjectBuf = UUIDToBuffer(subjectId);
+        await assertClassInSchool(connection, classBuf, schoolId);
         const weights = await model.getGradingWeights(classBuf, subjectBuf);
         return weights.map(w => ({
             id: w.id,
@@ -124,7 +153,7 @@ export const updateGradingWeightsService = async (
 
 // --- Grade Items ---
 
-export const getGradeItemsService = async (classId: string, subjectId: string, category?: string, periodId?: number, facultyId?: string) => {
+export const getGradeItemsService = async (classId: string, subjectId: string, category?: string, periodId?: number, facultyId?: string, schoolId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -133,6 +162,7 @@ export const getGradeItemsService = async (classId: string, subjectId: string, c
         const classBuf = UUIDToBuffer(classId);
         const subjectBuf = UUIDToBuffer(subjectId);
         const facultyBuf = facultyId ? UUIDToBuffer(facultyId) : undefined;
+        await assertClassInSchool(connection, classBuf, schoolId);
         const items = await model.getGradeItems(classBuf, subjectBuf, category as GradeItemCategory | undefined, periodId, facultyBuf);
         return items.map(i => ({
             id: bufferToUUID(i.id),
@@ -142,7 +172,7 @@ export const getGradeItemsService = async (classId: string, subjectId: string, c
             category: i.category,
             title: i.title,
             max_score: Number(i.max_score),
-            due_date: i.due_date,
+            due_date: toDateOnly(i.due_date),
             period_id: i.period_id,
             instructions: i.instructions,
             class_module_id: i.class_module_id ? bufferToUUID(i.class_module_id) : null,
@@ -346,7 +376,7 @@ export const deleteGradeItemService = async (itemId: string, facultyId: string) 
 
 // --- Grades ---
 
-export const getGradesForSubjectService = async (classId: string, subjectId: string, facultyId: string, periodId?: number) => {
+export const getGradesForSubjectService = async (classId: string, subjectId: string, facultyId: string, periodId?: number, schoolId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
     try {
@@ -356,6 +386,15 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
         const subjectBuf = UUIDToBuffer(subjectId);
         const facultyBuf = UUIDToBuffer(facultyId);
 
+        const classModel = new (await import("../model/classes.js")).default(connection);
+        const classInfo = await classModel.getClassById(classBuf);
+        if (!classInfo) {
+            throw new NotFoundError("Class not found", 404);
+        }
+        if (schoolId !== undefined && classInfo.school_id !== schoolId) {
+            throw new ForbiddenError("Access denied: cross-school violation");
+        }
+
         const assigned = await model.isTeacherAssignedToClassSubject(facultyBuf, classBuf, subjectBuf);
         if (!assigned) {
             throw new ForbiddenError("You are not assigned to teach this subject in this class");
@@ -363,11 +402,6 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
 
         const items = await model.getGradeItems(classBuf, subjectBuf, undefined, periodId, facultyBuf);
         const { getCurrentSchoolYearService } = await import("./school-years.js");
-        const classModel = new (await import("../model/classes.js")).default(connection);
-        const classInfo = await classModel.getClassById(classBuf);
-        if (!classInfo) {
-            throw new NotFoundError("Class not found", 404);
-        }
         const subjectModel = new (await import("../model/subjects.js")).default(connection);
         const subjectInfo = await subjectModel.getSubjectById(subjectBuf);
         const currentSy = await getCurrentSchoolYearService(classInfo.school_id);
@@ -470,7 +504,7 @@ export const getGradesForSubjectService = async (classId: string, subjectId: str
                 category: i.category,
                 title: i.title,
                 max_score: Number(i.max_score),
-                due_date: i.due_date,
+                due_date: toDateOnly(i.due_date),
                 period_id: i.period_id,
                 instructions: i.instructions,
                 class_module_id: i.class_module_id ? bufferToUUID(i.class_module_id) : null,
@@ -622,7 +656,7 @@ export const getStudentGradesForSubjectService = async (
                     hasAny = true;
                 }
                 max += Number(i.max_score);
-                return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: i.due_date };
+                return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: toDateOnly(i.due_date) };
             });
             categoryData[cat] = {
                 items: itemList,
@@ -725,7 +759,7 @@ async function computeSubjectSummary(
             const score = scoreMap.get(iid) ?? null;
             if (score !== null) { sum += score; hasAny = true; }
             max += Number(i.max_score);
-            return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: i.due_date };
+            return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: toDateOnly(i.due_date) };
         });
         categoryData[cat] = {
             items: itemList,

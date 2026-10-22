@@ -25,7 +25,7 @@ export const getGradingWeights = async (
 ) => {
     const { classId, subjectId } = req.params;
     try {
-        const result = await getGradingWeightsService(classId, subjectId);
+        const result = await getGradingWeightsService(classId, subjectId, req.user!.school_id);
         sendSuccess(res, "Grading weights retrieved", result);
     } catch (err) {
         next(err);
@@ -60,7 +60,7 @@ export const getGradeItems = async (
     const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     const facultyId = req.user?.role === "faculty" ? req.user.id : undefined;
     try {
-        const result = await getGradeItemsService(classId, subjectId, category, periodId, facultyId);
+        const result = await getGradeItemsService(classId, subjectId, category, periodId, facultyId, req.user!.school_id);
         sendSuccess(res, "Grade items retrieved", result);
     } catch (err) {
         next(err);
@@ -127,7 +127,7 @@ export const getGradesForSubject = async (
     const facultyId = req.user!.id;
     const periodId = typeof req.query.period_id === "string" ? Number(req.query.period_id) : undefined;
     try {
-        const result = await getGradesForSubjectService(classId, subjectId, facultyId, periodId);
+        const result = await getGradesForSubjectService(classId, subjectId, facultyId, periodId, req.user!.school_id);
         sendSuccess(res, "Grades retrieved", result);
     } catch (err) {
         next(err);
@@ -203,7 +203,8 @@ export const finalizePeriod = async (
             subject_id,
             req.user!.id,
             periodIdNum,
-            req.user!.role
+            req.user!.role,
+            req.user!.school_id
         );
         sendSuccess(res, result.message, result);
     } catch (err) {
@@ -248,7 +249,8 @@ export const correctFinalization = async (
             final_grade ?? null,
             req.user!.id,
             req.user!.role,
-            reason ?? ""
+            reason ?? "",
+            req.user!.school_id
         );
         sendSuccess(res, result.message, result);
     } catch (err) {

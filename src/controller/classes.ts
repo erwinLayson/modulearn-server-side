@@ -9,6 +9,7 @@ import {CheckData} from "../helper/checkdata.js";
 import {generateRandomUUID} from "../helper/generateRandomId.js";
 import {sendSuccess} from "../helper/sendSuccess.js";
 import { UUIDToBuffer } from "../helper/UUIDToBuffer.js";
+import {BadRequestError} from "../helper/error.js";
 
 // Request body types (accept string UUIDs from HTTP)
 interface ClassCreateRequest {
@@ -32,6 +33,8 @@ interface ClassUpdateRequest {
     schedule?: any;
 }
 
+const isBlankString = (v: unknown): boolean => typeof v === "string" && v.trim() === "";
+
 export const registerClass = async (
     req: Request<{}, {}, ClassCreateRequest> & { user?: TokenPayload },
     res: Response,
@@ -39,19 +42,35 @@ export const registerClass = async (
 ) => {
     const {class_name, faculty_id, school_year_id, capacity, section, grade_level, schedule} = req.body;
 
+    // Validate required fields before any conversion so a missing faculty_id returns
+    // a 400 instead of crashing in UUIDToBuffer.
+    if (isBlankString(class_name)) {
+        return next(new BadRequestError("Invalid data: class_name"));
+    }
+    if (school_year_id === undefined || school_year_id === null) {
+        return next(new BadRequestError("Invalid data: school_year_id"));
+    }
+    if (isBlankString(faculty_id)) {
+        return next(new BadRequestError("Invalid data: faculty_id"));
+    }
+
+    const normalized = faculty_id.replace(/-/g, "");
+    if (!/^[0-9a-f]{32}$/i.test(normalized)) {
+        return next(new BadRequestError("Invalid data: faculty_id"));
+    }
+    const facultyBuffer = UUIDToBuffer(faculty_id);
+
     const classData: ClassProp = {
         id: generateRandomUUID(),
         class_name,
         school_id: req.user!.school_id!,
         school_year_id,
-        faculty_id: UUIDToBuffer(faculty_id),
+        faculty_id: facultyBuffer,
         capacity: capacity ?? null,
         section: section ?? null,
         grade_level: grade_level ?? null,
         schedule: schedule ?? null,
     };
-
-    CheckData(classData);
 
     try {
         await registerClassService(classData);

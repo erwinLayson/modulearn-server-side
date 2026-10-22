@@ -15,7 +15,7 @@ const router: Router = Router();
 
 // List periods for a school year
 router.get(
-    "/academic-periods/school/:schoolId/year/:yearId",
+    "/academic-periods/school/:school_id/year/:year_id",
     authMiddleware,
     enforceSchoolParam,
     getPeriods
@@ -23,7 +23,7 @@ router.get(
 
 // Get current period
 router.get(
-    "/academic-periods/school/:schoolId/current",
+    "/academic-periods/school/:school_id/current",
     authMiddleware,
     enforceSchoolParam,
     getCurrentPeriod

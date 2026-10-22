@@ -1,12 +1,13 @@
 import {databasePool} from "../config/database.js";
 import EnrollmentModel from "../model/enrollments.js";
 import ClassModel from "../model/classes.js";
+import StudentModel from "../model/students.js";
 import type{EnrollmentProp} from "../constant/enrollments.js";
 import { bufferToUUID } from "../helper/bufferToUUID.js";
 import { UUIDToBuffer } from "../helper/UUIDToBuffer.js";
-import {BadRequestError, NotFoundError} from "../helper/error.js";
+import {BadRequestError, ForbiddenError, NotFoundError} from "../helper/error.js";
 
-export const enrollStudentService = async (enrollment: EnrollmentProp, subjectIds: string[]) => {
+export const enrollStudentService = async (enrollment: EnrollmentProp, subjectIds: string[], schoolId?: number) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
 
@@ -14,14 +15,27 @@ export const enrollStudentService = async (enrollment: EnrollmentProp, subjectId
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
         const classModel = new ClassModel(connection);
         const enrollmentModel = new EnrollmentModel(connection);
+        const studentModel = new StudentModel(connection);
 
-        // 1. Validate class exists
+        // 1. Validate class exists and belongs to the caller's school
         const classData = await classModel.getClassById(enrollment.class_id);
         if (!classData) {
             throw new NotFoundError("Class not found", 404);
         }
+        if (schoolId !== undefined && classData.school_id !== schoolId) {
+            throw new ForbiddenError("Access denied: cross-school violation");
+        }
 
-        // 2. Validate enrollment grade_level matches class grade_level
+        // 2. Validate the student exists and belongs to the caller's school
+        const student = await studentModel.getStudentById(enrollment.student_id);
+        if (!student) {
+            throw new NotFoundError("Student not found", 404);
+        }
+        if (schoolId !== undefined && student.school_id !== schoolId) {
+            throw new ForbiddenError("Access denied: cross-school violation");
+        }
+
+        // 3. Validate enrollment grade_level matches class grade_level
         if (classData.grade_level !== null && enrollment.grade_level !== null) {
             if (String(enrollment.grade_level) !== classData.grade_level) {
                 throw new BadRequestError(`Grade level ${enrollment.grade_level} does not match class grade level (${classData.grade_level})`);

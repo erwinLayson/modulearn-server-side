@@ -9,9 +9,11 @@
     "seed:students": "tsx src/seeders/001_seed_students_and_records.ts",
     "start": "node ./dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "test": "tsx src/tests/gradeCalculation.test.ts",
-    "test:modules": "tsx src/tests/teachingModules.test.ts",
-    "test:all": "pnpm test && pnpm test:modules"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:unit": "vitest run src/tests/unit",
+    "typecheck:test": "tsc -p tsconfig.test.json"
   },
   "keywords": [],
   "author": "",
@@ -38,6 +40,11 @@
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
-    "@types/jsonwebtoken": "^9.0.10"
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^26.6.5",
+    "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^5.0.5",
+    "supertest": "^7.3.1",
+    "vitest": "^5.0.5"
   }
 }

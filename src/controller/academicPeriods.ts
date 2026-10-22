@@ -14,13 +14,13 @@ import { sendSuccess } from "../helper/sendSuccess.js";
 
 // --- List periods for a school year ---
 export const getPeriods = async (
-    req: Request<{ schoolId: string; yearId: string }> & { user?: TokenPayload },
+    req: Request<{ school_id: string; year_id: string }> & { user?: TokenPayload },
     res: Response,
     next: NextFunction
 ) => {
-    const { schoolId, yearId } = req.params;
+    const { school_id, year_id } = req.params;
     try {
-        const result = await getPeriodsBySchoolAndYearService(Number(schoolId), Number(yearId));
+        const result = await getPeriodsBySchoolAndYearService(Number(school_id), Number(year_id));
         sendSuccess(res, "Academic periods retrieved", result);
     } catch (err) {
         next(err);
@@ -29,13 +29,13 @@ export const getPeriods = async (
 
 // --- Get current period ---
 export const getCurrentPeriod = async (
-    req: Request<{ schoolId: string }> & { user?: TokenPayload },
+    req: Request<{ school_id: string }> & { user?: TokenPayload },
     res: Response,
     next: NextFunction
 ) => {
-    const { schoolId } = req.params;
+    const { school_id } = req.params;
     try {
-        const result = await getCurrentPeriodService(Number(schoolId));
+        const result = await getCurrentPeriodService(Number(school_id));
         sendSuccess(res, "Current academic period retrieved", result);
     } catch (err) {
         next(err);

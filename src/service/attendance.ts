@@ -1,7 +1,7 @@
-import {databasePool} from "../config/database.js";
+import { databasePool } from "../config/database.js";
 import AttendanceModel from "../model/attendance.js";
-import type {AttendanceHistoryItem, FacultyDashboardSummary, StudentSubjectAttendance, StudentAttendanceDetail, SchoolAttendanceReportItem} from "../model/attendance.js";
-import {NotFoundError, BadRequestError, ForbiddenError} from "../helper/error.js";
+import type { AttendanceHistoryItem, FacultyDashboardSummary, StudentSubjectAttendance, StudentAttendanceDetail, SchoolAttendanceReportItem } from "../model/attendance.js";
+import { NotFoundError, BadRequestError, ForbiddenError } from "../helper/error.js";
 import { bufferToUUID } from "../helper/bufferToUUID.js";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -376,10 +376,11 @@ export const getAttendanceBySchoolAndDateService = async (
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
         const attendanceModel = new AttendanceModel(connection);
 
-        // Verify user belongs to this school
-        const facultyModel = new (await import("../model/faculties.js")).default(connection);
-        const faculty = await facultyModel.getFacultyById(UUIDToBuffer(markedBy));
-        if (!faculty || faculty.school_id !== schoolId) {
+        // Verify user belongs to this school. Use the users table so both
+        // school admins and faculty accounts can be checked.
+        const userModel = new (await import("../model/users.js")).default(connection);
+        const user = await userModel.getUserById(UUIDToBuffer(markedBy));
+        if (!user || user.school_id !== schoolId) {
             throw new ForbiddenError("You do not belong to this school");
         }
 

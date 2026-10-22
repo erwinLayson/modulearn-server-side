@@ -7,7 +7,7 @@ import PeriodFinalizationsModel from "../model/periodFinalizations.js";
 import ClassModel from "../model/classes.js";
 import AcademicPeriodsModel from "../model/academicPeriods.js";
 import SchoolYearModel from "../model/school-years.js";
-import type { PoolConnection } from "mysql2/promise";
+import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 
 async function computeLiveFinalGrade(
     connection: PoolConnection,
@@ -58,7 +58,8 @@ export const finalizePeriodGradesService = async (
     subjectId: string,
     facultyId: string,
     periodId: number | null,
-    role: string
+    role: string,
+    schoolId?: number
 ) => {
     const pool = databasePool();
     const connection = await pool.getConnection();
@@ -78,7 +79,11 @@ export const finalizePeriodGradesService = async (
             if (!assigned) {
                 throw new ForbiddenError("You are not assigned to teach this subject in this class");
             }
-        } else if (role !== "school_admin") {
+        } else if (role === "school_admin") {
+            if (schoolId === undefined || classInfo.school_id !== schoolId) {
+                throw new NotFoundError("Class not available in your school", 404);
+            }
+        } else {
             throw new ForbiddenError("Insufficient permissions");
         }
 
@@ -191,7 +196,8 @@ export const correctFinalizationService = async (
     finalGrade: number | null,
     updatedBy: string,
     role: string,
-    reason: string
+    reason: string,
+    schoolId?: number
 ) => {
     if (role !== "school_admin") {
         throw new ForbiddenError("Only school admins can correct finalized grades");
@@ -207,6 +213,18 @@ export const correctFinalizationService = async (
     const connection = await pool.getConnection();
     try {
         const { UUIDToBuffer } = await import("../helper/UUIDToBuffer.js");
+
+        const [rows] = await connection.execute<RowDataPacket[]>(
+            `SELECT school_id FROM period_finalizations WHERE id = ?`,
+            [finalizationId]
+        );
+        if (rows.length === 0) {
+            throw new NotFoundError("Finalization not available", 404);
+        }
+        if (schoolId === undefined || Number(rows[0]?.school_id) !== schoolId) {
+            throw new NotFoundError("Finalization not available", 404);
+        }
+
         await new PeriodFinalizationsModel(connection).correctFinalization(
             finalizationId,
             finalGrade,

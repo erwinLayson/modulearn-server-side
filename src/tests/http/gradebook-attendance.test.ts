@@ -739,6 +739,132 @@ describe("gradebook and attendance endpoint behavior", () => {
         });
     });
 
+    it("attaches an activity created from a teaching module to the enrolled student's grades and summary", async () => {
+        const teacher = await school.addFaculty();
+        const student = await school.addStudent();
+        const subject = await school.addSubject();
+        const { classroom, period } = await buildEnrolledClass(school, teacher, subject, student);
+
+        // 1. Teacher creates a module for this subject
+        const moduleRes = expectSuccess(
+            await api
+                .post(teacher.identity, "/api/modules/mine")
+                .send({
+                    title: `Module for Grades ${RUN_ID}`,
+                    description: "Module with activity template",
+                    subject_id: subject.id,
+                    status: "draft",
+                }),
+            201
+        );
+        const moduleId = moduleRes.data.id;
+
+        // 2. Teacher adds an activity template to the module
+        const templateRes = expectSuccess(
+            await api
+                .post(teacher.identity, `/api/modules/mine/${moduleId}/templates`)
+                .send({
+                    title: `Module Activity Template ${RUN_ID}`,
+                    instructions: "Complete all questions",
+                    category: "activities",
+                    max_score: 25,
+                    sort_order: 0,
+                }),
+            201
+        );
+        const templateId = templateRes.data.id;
+
+        // 3. Teacher assigns the module to the classroom
+        const assignmentRes = expectSuccess(
+            await api
+                .post(teacher.identity, "/api/class-modules")
+                .send({
+                    module_id: moduleId,
+                    classroom_id: classroom.id,
+                    school_year_id: classroom.schoolYearId,
+                }),
+            201
+        );
+        const assignmentId = assignmentRes.data.id;
+
+        // 4. Teacher instantiates an activity in the classroom from the module template
+        const activityTitle = `Assigned Module Activity ${RUN_ID}`;
+        const instantiatedRes = expectSuccess(
+            await api
+                .post(teacher.identity, `/api/class-modules/${assignmentId}/activities`)
+                .send({
+                    template_id: templateId,
+                    period_id: period.id,
+                    title: activityTitle,
+                    max_score: 25,
+                    due_date: "2025-03-15",
+                }),
+            201
+        );
+        const activityId = instantiatedRes.data.id;
+
+        // 5. Verify the created activity is attached to the enrolled student's subject grades
+        const studentSubjectGrades = expectSuccess(
+            await api.get(student.identity, `/api/gradebook/student/${classroom.id}/${subject.id}`),
+            200
+        );
+        expect(studentSubjectGrades.data.activities.items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: activityId,
+                    title: activityTitle,
+                    max_score: 25,
+                    score: null,
+                    due_date: "2025-03-15",
+                }),
+            ])
+        );
+
+        // 6. Verify the created activity is attached to the student's overall gradebook summary
+        const studentSummary = expectSuccess(
+            await api.get(student.identity, "/api/gradebook/student-summary"),
+            200
+        );
+        const subjectSummary = studentSummary.data.find((s: { class_id: string; subject_id: string }) =>
+            s.class_id === classroom.id && s.subject_id === subject.id
+        );
+        expect(subjectSummary).toBeDefined();
+        expect(subjectSummary.activities.items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: activityId,
+                    title: activityTitle,
+                    max_score: 25,
+                    score: null,
+                }),
+            ])
+        );
+
+        // 7. Teacher scores the student on the module activity
+        expectSuccess(
+            await api
+                .post(teacher.identity, `/api/gradebook/grades/${activityId}`)
+                .send({ grades: [{ student_id: student.id, score: 23 }] }),
+            200
+        );
+
+        // 8. The updated score is attached and reflected in the student's grades
+        const updatedStudentGrades = expectSuccess(
+            await api.get(student.identity, `/api/gradebook/student/${classroom.id}/${subject.id}`),
+            200
+        );
+        expect(updatedStudentGrades.data.activities.items).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    id: activityId,
+                    title: activityTitle,
+                    score: 23,
+                    max_score: 25,
+                }),
+            ])
+        );
+    });
+
     it("does not expose another student's scores or grades", async () => {
         const teacher = await school.addFaculty();
         const studentA = await school.addStudent();

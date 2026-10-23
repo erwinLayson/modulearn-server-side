@@ -656,7 +656,16 @@ export const getStudentGradesForSubjectService = async (
                     hasAny = true;
                 }
                 max += Number(i.max_score);
-                return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: toDateOnly(i.due_date) };
+                return {
+                    id: iid,
+                    title: i.title,
+                    score,
+                    max_score: Number(i.max_score),
+                    due_date: toDateOnly(i.due_date),
+                    instructions: i.instructions ?? null,
+                    class_module_id: i.class_module_id ? bufferToUUID(i.class_module_id) : null,
+                    module_template_id: i.module_template_id ? bufferToUUID(i.module_template_id) : null,
+                };
             });
             categoryData[cat] = {
                 items: itemList,
@@ -759,7 +768,16 @@ async function computeSubjectSummary(
             const score = scoreMap.get(iid) ?? null;
             if (score !== null) { sum += score; hasAny = true; }
             max += Number(i.max_score);
-            return { id: iid, title: i.title, score, max_score: Number(i.max_score), due_date: toDateOnly(i.due_date) };
+            return {
+                id: iid,
+                title: i.title,
+                score,
+                max_score: Number(i.max_score),
+                due_date: toDateOnly(i.due_date),
+                instructions: i.instructions ?? null,
+                class_module_id: i.class_module_id ? bufferToUUID(i.class_module_id) : null,
+                module_template_id: i.module_template_id ? bufferToUUID(i.module_template_id) : null,
+            };
         });
         categoryData[cat] = {
             items: itemList,

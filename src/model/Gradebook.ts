@@ -326,11 +326,20 @@ export default class Gradebook {
     }
 
     async getStudentGradesForSubject(studentId: Buffer, classId: Buffer, subjectId: Buffer, periodId?: number): Promise<{
-        items: { id: Buffer; category: GradeItemCategory; title: string; max_score: number; due_date: string | null }[];
+        items: {
+            id: Buffer;
+            category: GradeItemCategory;
+            title: string;
+            max_score: number;
+            due_date: string | null;
+            instructions?: string | null;
+            class_module_id?: Buffer | null;
+            module_template_id?: Buffer | null;
+        }[];
         scores: { grade_item_id: Buffer; score: number }[];
     }> {
         try {
-            let itemsQuery = `SELECT id, category, title, max_score, due_date, instructions FROM grade_items WHERE class_id = ? AND subject_id = ?`;
+            let itemsQuery = `SELECT id, category, title, max_score, due_date, instructions, class_module_id, module_template_id FROM grade_items WHERE class_id = ? AND subject_id = ?`;
             const itemsParams: (Buffer | number)[] = [classId, subjectId];
             if (periodId !== undefined) {
                 itemsQuery += ` AND period_id = ?`;
@@ -349,7 +358,16 @@ export default class Gradebook {
             const [scores] = await this.connection.execute<RowDataPacket[]>(scoresQuery, scoresParams);
 
             return {
-                items: items as { id: Buffer; category: GradeItemCategory; title: string; max_score: number; due_date: string | null }[],
+                items: items as {
+                    id: Buffer;
+                    category: GradeItemCategory;
+                    title: string;
+                    max_score: number;
+                    due_date: string | null;
+                    instructions?: string | null;
+                    class_module_id?: Buffer | null;
+                    module_template_id?: Buffer | null;
+                }[],
                 scores: scores as { grade_item_id: Buffer; score: number }[],
             };
         } catch (err) {

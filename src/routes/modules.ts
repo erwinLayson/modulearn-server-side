@@ -24,6 +24,13 @@ import {
     deleteModuleLesson,
     downloadModuleLessonFile,
 } from "../controller/moduleLessons.js";
+import {
+    listLessonClassrooms,
+    assignLessonToClass,
+    unassignLessonFromClass,
+    listStudentLessons,
+    downloadStudentLessonFile,
+} from "../controller/classModuleLessons.js";
 import { lessonUpload } from "../middleware/lessonUpload.js";
 import { authMiddleware, roleMiddleware } from "../middleware/auth.js";
 import { enforceSchoolScope, enforceSchoolParam, verifyOwnership } from "../middleware/schoolScope.js";
@@ -49,6 +56,15 @@ router.post('/modules/mine/:id/lessons', authMiddleware, roleMiddleware('faculty
 router.put('/modules/mine/:id/lessons/:lesson_id', authMiddleware, roleMiddleware('faculty'), lessonUpload.single('file'), updateModuleLesson as RequestHandler);
 router.delete('/modules/mine/:id/lessons/:lesson_id', authMiddleware, roleMiddleware('faculty'), deleteModuleLesson);
 router.get('/modules/mine/:id/lessons/:lesson_id/file', authMiddleware, roleMiddleware('faculty'), downloadModuleLessonFile);
+
+// Which classrooms a lesson / learning material is published to
+router.get('/modules/mine/:id/lessons/:lesson_id/assignments', authMiddleware, roleMiddleware('faculty'), listLessonClassrooms);
+router.post('/modules/mine/:id/lessons/:lesson_id/assignments', authMiddleware, roleMiddleware('faculty'), assignLessonToClass);
+router.delete('/modules/mine/:id/lessons/:lesson_id/assignments/:class_module_id', authMiddleware, roleMiddleware('faculty'), unassignLessonFromClass);
+
+// Student-visible learning materials assigned to their enrolled classes
+router.get('/modules/student/lessons', authMiddleware, roleMiddleware('student'), listStudentLessons);
+router.get('/modules/student/lessons/:lesson_id/file', authMiddleware, roleMiddleware('student'), downloadStudentLessonFile);
 
 router.get('/modules/school/:school_id', authMiddleware, roleMiddleware('school_admin', 'super_admin'), enforceSchoolParam, getModulesBySchoolId);
 router.get('/modules/:id', authMiddleware, verifyOwnership('modules'), getModuleById);
